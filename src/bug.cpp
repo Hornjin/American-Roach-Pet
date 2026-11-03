@@ -185,6 +185,16 @@ void Bug::enterHideUnder(int iconIdx) {
         m_y = cy + sinf(a) * hh;
         m_ang = a + frand(-0.3f, 0.3f);
         m_coverRc = ir;
+        // silhouette of the artwork inside that rectangle (may be empty, in
+        // which case the rectangle itself is used as the occluder)
+        bool sameRc = (ir.left == it.ir.left && ir.top == it.ir.top &&
+                       ir.right == it.ir.right && ir.bottom == it.ir.bottom);
+        m_coverSpan  = sameRc ? it.span : std::vector<std::pair<short, short>>();
+        m_coverMaskW = sameRc ? it.maskW : 0;
+        m_coverMaskH = sameRc ? it.maskH : 0;
+        if (getenv("ROACH_MASK_LOG"))
+            LogLine(L"hide under icon=%d name=%ls masked=%d mask=%dx%d", iconIdx,
+                    it.name.c_str(), (int)!m_coverSpan.empty(), m_coverMaskW, m_coverMaskH);
     }
     if (m_stage == Stage::Ootheca) m_life = -frand(70.0f, 90.0f);   // hatching timer
 }
@@ -534,10 +544,41 @@ void Bug::drawInto(Gdiplus::Graphics& g, int ox, int oy) {
         // would lie on top of the icon is cut away - what is left really does
         // look like it is emerging from underneath the file.
         if (m_coverRc.right > m_coverRc.left && m_coverRc.bottom > m_coverRc.top) {
-            Gdiplus::Rect hole(m_coverRc.left - ox, m_coverRc.top - oy,
-                               m_coverRc.right - m_coverRc.left,
-                               m_coverRc.bottom - m_coverRc.top);
-            g.SetClip(hole, Gdiplus::CombineModeExclude);
+            int irW = m_coverRc.right - m_coverRc.left;
+            int irH = m_coverRc.bottom - m_coverRc.top;
+            bool masked = (m_coverMaskW > 0 && m_coverMaskH > 0 &&
+                           (int)m_coverSpan.size() == m_coverMaskH);
+
+            if (masked) {
+                // Exclude the icon's actual silhouette instead of its bounding
+                // box, so the antennae run right up to the drawn artwork and
+                // stop there - not at an invisible rectangle edge.
+                Gdiplus::GraphicsPath path;
+                int y = 0;
+                while (y < m_coverMaskH) {
+                    short x0 = m_coverSpan[y].first, x1 = m_coverSpan[y].second;
+                    int run = 1;
+                    while (y + run < m_coverMaskH &&
+                           m_coverSpan[y + run].first == x0 &&
+                           m_coverSpan[y + run].second == x1) run++;
+
+                    if (x1 > x0) {
+                        int py0 = m_coverRc.top + y * irH / m_coverMaskH;
+                        int py1 = m_coverRc.top + (y + run) * irH / m_coverMaskH;
+                        int px0 = m_coverRc.left + x0 * irW / m_coverMaskW;
+                        int px1 = m_coverRc.left + x1 * irW / m_coverMaskW;
+                        if (py1 > py0 && px1 > px0)
+                            path.AddRectangle(Gdiplus::Rect(px0 - ox, py0 - oy,
+                                                            px1 - px0, py1 - py0));
+                    }
+                    y += run;
+                }
+                if (path.GetPointCount() > 0)
+                    g.SetClip(&path, Gdiplus::CombineModeExclude);
+            } else {
+                Gdiplus::Rect hole(m_coverRc.left - ox, m_coverRc.top - oy, irW, irH);
+                g.SetClip(hole, Gdiplus::CombineModeExclude);
+            }
         }
         float amp = 0.9f + 0.35f * sinf(m_t * 0.7f);
         R::DrawAntennaeOnly(g, cx, cy, m_ang, L, m_t, m_antPhase, amp);

@@ -17,11 +17,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "RoachPet"
             VALUE "FileDescription", "American Cockroach Desktop Pet"
-            VALUE "FileVersion", "1.1.0.0"
+            VALUE "FileVersion", "1.1.1.0"
             VALUE "InternalName", "RoachPet"
             VALUE "OriginalFilename", "RoachPet.exe"
             VALUE "ProductName", "RoachPet"
-            VALUE "ProductVersion", "1.1.0.0"
+            VALUE "ProductVersion", "1.1.1.0"
         END
     END
     BLOCK "VarFileInfo"

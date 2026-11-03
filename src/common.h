@@ -128,8 +128,8 @@ enum StrId {
     S_OPENCFG, S_CHECKUPD, S_REPO, S_ABOUT, S_BTNOK, S_BTNCANCEL, S_APPLY, S_CLOSE,
     S_LANG_ZH, S_LANG_EN, S_ALREADY_LATEST, S_RESTORE_OK, S_RESTORE_NONE, S_RESTORE_CONFIRM,
     S_ABOUT_TEXT, S_HK_TIP, S_NEED_ADMIN, S_TRAY_TIP,
-    S_PAUSE, S_OPENLOGFILE, S_VER, S_EATEN_TIP,
-    S_HIDEONAPP, S_HIDEONAPP_TIP,
+    S_PAUSE, S_OPENLOGFILE, S_EATEN_TIP,
+    S_HIDEONAPP, S_HIDEONAPP_TIP, S_ABOUT_LINK,
     S_COUNT,
 };
 const wchar_t* T(int id);
@@ -141,6 +141,14 @@ struct IconItem {
     RECT         ir;       // screen rect, icon bitmap only
     POINT        pos;      // screen top-left of the icon
     int          cell;     // grid cell index
+
+    // Silhouette of the icon bitmap: one [x0,x1) span per mask row, in mask
+    // pixels.  A desktop icon is a rectangle on screen but the artwork inside
+    // it is any shape at all, so clipping a hiding insect against the whole
+    // rectangle would cut its antennae off in mid air.  Empty = unknown, and
+    // callers fall back to the plain rectangle.
+    std::vector<std::pair<short, short>> span;
+    int          maskW = 0, maskH = 0;
 };
 
 class DesktopWatcher {
@@ -178,6 +186,7 @@ private:
     std::vector<std::wstring> m_paths; // parallel to m_icons (may be empty)
     int   m_hiddenCount = -1;          // cached journal line count (-1 = unknown)
     void  BuildPaths();
+    static void BuildIconMask(const std::wstring& path, IconItem& it);
 };
 
 extern DesktopWatcher g_desk;
@@ -271,6 +280,9 @@ private:
     int     m_hideCell = -1;
     int     m_hideIcon = -1;   // icon currently covering this bug
     RECT    m_coverRc = {0,0,0,0};  // screen rect of that file's icon bitmap
+    // opaque silhouette of that icon (see IconItem::span); empty -> use m_coverRc
+    std::vector<std::pair<short, short>> m_coverSpan;
+    int     m_coverMaskW = 0, m_coverMaskH = 0;
     int     m_seekIcon = -1;   // icon this bug is scuttling towards
     int     m_eatIcon  = -1;
     float   m_eatHold  = 0;

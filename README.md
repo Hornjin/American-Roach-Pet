@@ -6,11 +6,9 @@
 
 ![各阶段形象](docs/art.png)
 
-原生 Win32 + GDI+ 实现，**单文件 exe，无运行时依赖**，全部形象由矢量代码逐帧绘制（没有任何位图素材）。
-
 | 项目 | 值 |
 |---|---|
-| 版本 | v1.1.0 |
+| 版本 | v1.1.1 |
 | 平台 | Windows 7 SP1 及以上（x64，PerMonitorV2 DPI 感知） |
 | 产物 | `bin/RoachPet.exe`，约 341 KB |
 | 代码 | 7 个源文件，约 3400 行 C++17 |
@@ -70,11 +68,15 @@ g++ -std=c++17 -municode -mwindows -Os -s -static \
 `Wander → Flee / Eat / Poop / Hidden / Emerge`
 
 - **Wander**：在图标密集区（80 px 网格）里挑目标点爬行，偶尔停下歇一会儿；转向带惯性，不是直线平移。
-- **Hidden**：钻进某个图标底下，身体完全不绘制，只对图标位图矩形做排除裁切，露出两根触须。
+- **Hidden**：钻进某个图标底下，身体完全不绘制，只露出两根触须。触须的裁切依据是图标的**真实轮廓**（从图标位图的 alpha 通道逐行取不透明区间），而不是它那个矩形外框——所以触须能一直伸到图标图案的边缘才消失，不会在图标外侧的透明角落里凭空断掉。
 - **Emerge / burstOut**：藏身处被掀开（你挪了图标）或刚孵化时，从图标底下冲出来。
 - **Flee**：鼠标划过（`hover_flee`）、或附近有同类惊逃时触发，会连锁引起周围个体一起跑。
 - **Eat**：对着目标图标啃食，有上颚开合动画，结束后隐藏该文件并排泄。
 - **Poop**：排出粪便，散布在桌面，跟随桌面层遮挡关系。
+
+图标轮廓裁切的效果对比——左边按矩形裁切，触须在图标外框处被生硬切断；右边按真实轮廓裁切，触须一直伸到图案边缘：
+
+![图标轮廓裁切对比](docs/mask_compare.png)
 
 ### 啃食文件（可逆）
 
@@ -97,12 +99,13 @@ attrib +s +h "D:\path\to\file.lnk"
 | 设置 → 文件（可逆）→ 还原全部 | 显示当前隐藏数量 |
 | `RoachPet.exe --restore` | 不开 UI，适合程序崩溃后使用 |
 
-### 桌面层遮挡（v1.1.0 核心）
+### 桌面层遮挡（v1.1.1 核心）
 
 早期版本里蟑螂窗口是 `WS_EX_TOPMOST` 的，打开记事本会看到触须浮在窗口之上。现在每只蟑螂在呈现前都会做一次遮挡判定：
 
 1. 每 180 ms 用 `EnumWindows` 收集所有覆盖桌面的窗口矩形；
 2. 过滤掉系统类（`Progman` / `WorkerW` / `SHELLDLL_DefView` / `SysListView32` / 任务栏）、`DwmGetWindowAttribute(DWMWA_CLOAKED)` 报出的幽灵 UWP、`WS_EX_TRANSPARENT`、全透明分层窗口、最小化与零尺寸窗口；
+   另外还跳过**壳层浮层**（`XamlExplorerHostIslandWindow` 等 XAML island、以及无标题且不可激活的工具窗口）——拖动窗口时 Windows 会拉起一个铺满全屏的贴靠预览浮层，若把它当成遮挡物，整群蟑螂会在拖动期间全部消失，看起来就是「卡住了」；
 3. 把精灵矩形和这批矩形求交：
    - **完全被盖住** → `ShowWindow(SW_HIDE)`，一个像素都不画；
    - **部分遮挡** → 对每个相交矩形做 GDI+ `SetClip(CombineModeExclude)`，蟑螂像从窗口边缘后面钻出来，绝不覆盖窗口内容；
@@ -199,6 +202,10 @@ roachpet/
 | `winctl.exe <class> [top\|activate\|move x y\|close]` | 控制窗口 |
 | `maxwin.exe <class> [restore]` | 最大化 / 还原窗口 |
 | `deskicon.exe list\|move` | 读取或移动桌面图标 |
+| `drag.exe <class> dx dy [steps] [ms]` / `drag.exe @ x y dx dy` | 模拟拖动窗口或桌面图标 |
+| `bugpos.exe` | 列出所有桌宠窗口的位置与可见性（不触碰其它进程，拖动中也能用） |
+| `icontest.exe` | 打印桌面图标的不透明轮廓统计 |
+| `masktest.exe <out.png>` | 生成「矩形裁切 vs 轮廓裁切」对比图 |
 | `roachctl.exe <toggle\|settings\|pause\|clean\|restore\|quit>` | 向运行中的实例发命令 |
 | `preview.exe <out.png>` | 输出美术设计图 |
 

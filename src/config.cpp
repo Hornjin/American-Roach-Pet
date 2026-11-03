@@ -63,20 +63,15 @@ static const LStr kStr[] = {
 /*S_CLOSE*/          { L"关闭", L"Close" },
 /*S_LANG_ZH*/        { L"简体中文", L"简体中文" },
 /*S_LANG_EN*/        { L"English", L"English" },
-/*S_ALREADY_LATEST*/ { L"当前已是最新版本 v1.1.0", L"You are on the latest version v1.1.0" },
+/*S_ALREADY_LATEST*/ { L"当前已是最新版本 v1.1.1", L"You are on the latest version v1.1.1" },
 /*S_RESTORE_OK*/     { L"已还原 %d 个文件。", L"%d file(s) restored." },
 /*S_RESTORE_NONE*/   { L"没有被隐藏的文件。", L"No hidden files." },
 /*S_RESTORE_CONFIRM*/{ L"将把本程序隐藏的所有文件恢复为正常属性（attrib -s -h）。\n是否继续？",
                        L"Restore the normal attributes of every file hidden by this app?\nContinue?" },
-/*S_ABOUT_TEXT*/     { L"美洲大蠊桌宠 v1.1.0\n\n"
-                         L"原生 Win32 + GDI+ 实现，单文件、无运行时依赖、低占用。\n"
-                         L"全部形象由矢量代码实时绘制（非位图素材），因此触须与步足可逐帧摆动。\n\n"
+/*S_ABOUT_TEXT*/     { L"美洲大蠊桌宠 v1.1.1\n\n"
                          L"啃食文件仅通过设置 隐藏+系统 属性实现（等同 attrib +s +h），\n"
                          L"不移动、不删除、不改内容，可随时一键还原。",
-                       L"American Roach Pet v1.1.0\n\n"
-                         L"Native Win32 + GDI+, single binary, no runtime, low footprint.\n"
-                         L"All artwork is drawn procedurally in vector code, so antennae and legs\n"
-                         L"animate every frame.\n\n"
+                       L"American Roach Pet v1.1.1\n\n"
                          L"Eating a file only sets the Hidden+System attributes (same as\n"
                          L"attrib +s +h). Nothing is moved, deleted or modified." },
 /*S_HK_TIP*/         { L"显示/隐藏 Ctrl+Alt+R    设置 Ctrl+Alt+S    退出 Ctrl+Alt+Q",
@@ -85,12 +80,15 @@ static const LStr kStr[] = {
 /*S_TRAY_TIP*/       { L"美洲大蠊桌宠\n双击打开设置", L"American Roach Pet\nDouble-click for settings" },
 /*S_PAUSE*/          { L"暂停全部动画", L"Pause all motion" },
 /*S_OPENLOGFILE*/    { L"打开日志", L"Open log file" },
-/*S_VER*/            { L"v1.1.0 · 原生 Win32 + GDI+ · 单文件", L"v1.1.0 · native Win32 + GDI+ · single file" },
 /*S_EATEN_TIP*/      { L"啃食 = 仅设置 隐藏+系统 属性（等同 attrib +s +h），文件可正常使用，可一键还原。",
                        L"Eating only sets Hidden+System attributes (same as attrib +s +h). Files stay usable and fully restorable." },
 /*S_HIDEONAPP*/      { L"窗口遮挡时隐藏（不开窗时浮于桌面）", L"Hide behind app windows" },
 /*S_HIDEONAPP_TIP*/  { L"被窗口盖住的地方自动隐藏",
                        L"Hidden wherever a window covers them" },
+/*S_ABOUT_LINK*/     { L"GitHub 仓库：<a href=\"https://github.com/HuangJHong/American-Roach-Pet\">"
+                       L"HuangJHong/American-Roach-Pet</a>",
+                       L"GitHub repository: <a href=\"https://github.com/HuangJHong/American-Roach-Pet\">"
+                       L"HuangJHong/American-Roach-Pet</a>" },
 };
 
 const wchar_t* T(int id) {

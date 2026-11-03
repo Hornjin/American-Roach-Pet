@@ -32,10 +32,28 @@ private:
     HANDLE m_hp; void* m_p = nullptr; SIZE_T m_sz;
 };
 
-LRESULT SendT(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT timeout = 400) {
+// Cross-process calls into Explorer must never be able to stall the animation
+// loop: while a window or an icon is being dragged Explorer sits in a modal
+// loop and can take seconds to answer.  Every call gets a short timeout and the
+// whole poll runs inside a budget; once the budget is gone we abandon the poll
+// and keep the icon layout we already have.
+static ULONGLONG s_pollDeadline = 0;
+static bool    s_pollBusy = false;
+
+LRESULT SendT(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT timeout = 120) {
+    if (s_pollBusy) return -1;
+    if (s_pollDeadline) {
+        ULONGLONG now = GetTickCount64();
+        if (now >= s_pollDeadline) { s_pollBusy = true; return -1; }
+        ULONGLONG left = s_pollDeadline - now;
+        if (left < timeout) timeout = (UINT)left;
+        if (timeout < 10) timeout = 10;
+    }
     DWORD_PTR r = 0;
-    if (!SendMessageTimeoutW(h, msg, wp, lp, SMTO_ABORTIFHUNG | SMTO_BLOCK, timeout, &r))
+    if (!SendMessageTimeoutW(h, msg, wp, lp, SMTO_ABORTIFHUNG | SMTO_BLOCK, timeout, &r)) {
+        s_pollBusy = true;          // treat a hang as "Explorer is busy"
         return -1;
+    }
     return (LRESULT)r;
 }
 
@@ -92,11 +110,119 @@ void DesktopWatcher::BuildPaths() {
     for (size_t i = 0; i < m_icons.size(); i++) {
         auto it = byStem.find(Lower(m_icons[i].name));
         if (it != byStem.end()) m_paths[i] = it->second;
+        BuildIconMask(m_paths[i], m_icons[i]);
     }
 }
 
+// ---------------------------------------------------------------- silhouette
+// Pull the shell icon for a path, read its alpha channel and remember, for each
+// mask row, the horizontal span that is actually opaque.  Bug::drawInto() then
+// excludes only those spans, so an antenna may run right up to the drawn part
+// of the icon instead of being chopped off at an invisible rectangle edge.
+namespace {
+struct MaskData {
+    std::vector<std::pair<short, short>> span;
+    int w = 0, h = 0;
+};
+std::map<std::wstring, MaskData> s_maskCache;   // path -> silhouette
+
+void ExtractIconMask(const std::wstring& path, MaskData& md);
+}
+
+void DesktopWatcher::BuildIconMask(const std::wstring& path, IconItem& it) {
+    it.span.clear();
+    it.maskW = it.maskH = 0;
+    if (path.empty()) return;
+
+    auto cached = s_maskCache.find(path);
+    if (cached == s_maskCache.end()) {
+        MaskData md;
+        ExtractIconMask(path, md);
+        cached = s_maskCache.emplace(path, std::move(md)).first;
+    }
+    it.span  = cached->second.span;
+    it.maskW = cached->second.w;
+    it.maskH = cached->second.h;
+}
+
+namespace {
+void ExtractIconMask(const std::wstring& path, MaskData& md) {
+    SHFILEINFOW sfi = {};
+    if (!SHGetFileInfoW(path.c_str(), FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi),
+                        SHGFI_ICON | SHGFI_LARGEICON) || !sfi.hIcon)
+        return;
+
+    ICONINFO ii = {};
+    if (!GetIconInfo(sfi.hIcon, &ii)) { DestroyIcon(sfi.hIcon); return; }
+
+    BITMAP bm = {};
+    if (!ii.hbmColor || !GetObjectW(ii.hbmColor, sizeof(bm), &bm) ||
+        bm.bmWidth <= 0 || bm.bmHeight <= 0 || bm.bmWidth > 512 || bm.bmHeight > 512) {
+        if (ii.hbmColor) DeleteObject(ii.hbmColor);
+        if (ii.hbmMask)  DeleteObject(ii.hbmMask);
+        DestroyIcon(sfi.hIcon);
+        return;
+    }
+
+    const int w = bm.bmWidth, h = bm.bmHeight;
+    std::vector<DWORD> px((size_t)w * h, 0);
+
+    BITMAPINFO bi = {};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;          // top-down
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    HDC dc = GetDC(nullptr);
+    bool haveAlpha = false;
+    if (GetDIBits(dc, ii.hbmColor, 0, h, px.data(), &bi, DIB_RGB_COLORS)) {
+        for (size_t i = 0; i < px.size(); i++) {
+            if ((px[i] >> 24) >= 24) { haveAlpha = true; break; }
+        }
+    }
+
+    // no alpha channel at all -> fall back to the AND mask (0 bit = opaque)
+    std::vector<DWORD> mono;
+    if (!haveAlpha && ii.hbmMask) {
+        BITMAP mbm = {};
+        if (GetObjectW(ii.hbmMask, sizeof(mbm), &mbm) && mbm.bmWidth == w && mbm.bmHeight == h) {
+            mono.assign((size_t)w * h, 0);
+            BITMAPINFO mi = bi;
+            if (!GetDIBits(dc, ii.hbmMask, 0, h, mono.data(), &mi, DIB_RGB_COLORS))
+                mono.clear();
+        }
+    }
+    ReleaseDC(nullptr, dc);
+
+    if (haveAlpha || !mono.empty()) {
+        md.span.resize(h);
+        for (int y = 0; y < h; y++) {
+            int x0 = -1, x1 = -1;
+            for (int x = 0; x < w; x++) {
+                bool on = haveAlpha ? ((px[(size_t)y * w + x] >> 24) >= 24)
+                                    : ((mono[(size_t)y * w + x] & 0x00FFFFFF) == 0);
+                if (on) { if (x0 < 0) x0 = x; x1 = x + 1; }
+            }
+            md.span[y] = (x0 < 0) ? std::make_pair((short)0, (short)0)
+                                  : std::make_pair((short)x0, (short)x1);
+        }
+        md.w = w;
+        md.h = h;
+    }
+
+    if (ii.hbmColor) DeleteObject(ii.hbmColor);
+    if (ii.hbmMask)  DeleteObject(ii.hbmMask);
+    DestroyIcon(sfi.hIcon);
+}
+} // namespace
+
 // ---------------------------------------------------------------- poll
 bool DesktopWatcher::Poll() {
+    s_pollDeadline = GetTickCount64() + 150;   // never spend more than this
+    s_pollBusy = false;
+
     HWND lv = FindDesktopListView();
     if (!lv) {
         bool had = m_ready || !m_icons.empty();
@@ -168,8 +294,14 @@ bool DesktopWatcher::Poll() {
         item.pos = pt;
         item.cell = -1;
         items.push_back(item);
+        if (s_pollBusy) break;          // Explorer went away mid-poll
     }
     CloseHandle(hp);
+    if (s_pollBusy) {
+        // partial read because Explorer stopped answering - keep the layout we
+        // already had instead of publishing a half-populated desktop
+        return false;
+    }
 
     // --- occupancy grid
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
@@ -209,6 +341,7 @@ bool DesktopWatcher::Poll() {
     m_cellPos.swap(centers);
     m_ready = true;
     if (changed) BuildPaths();
+    s_pollDeadline = 0;
     return changed;
 }
 

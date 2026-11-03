@@ -218,9 +218,128 @@ void AppQuit() {
     PostQuitMessage(0);
 }
 
+// =========================================================================
+// about
+// =========================================================================
+static HFONT UiFont(int pt, bool bold);     // defined with the settings UI
+
+static const wchar_t* kRepoUrl = L"https://github.com/HuangJHong/American-Roach-Pet";
+static HWND g_aboutWnd = nullptr;
+
+static void OpenRepo() {
+    ShellExecuteW(nullptr, L"open", kRepoUrl, nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+static LRESULT CALLBACK AboutProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+    case WM_COMMAND:
+        if (LOWORD(w) == IDOK || LOWORD(w) == IDCANCEL) DestroyWindow(h);
+        return 0;
+    case WM_NOTIFY: {
+        LPNMHDR nh = (LPNMHDR)l;
+        if (nh && (nh->code == NM_CLICK || nh->code == NM_RETURN)) {
+            OpenRepo();
+            return 0;
+        }
+        return 0;
+    }
+    case WM_CLOSE:
+        DestroyWindow(h);
+        return 0;
+    case WM_DESTROY:
+        g_aboutWnd = nullptr;
+        if (g_setWnd && IsWindow(g_setWnd)) EnableWindow(g_setWnd, TRUE);
+        return 0;
+    }
+    return DefWindowProcW(h, m, w, l);
+}
+
 void AppShowAbout() {
-    MessageBoxW(g_setWnd ? g_setWnd : g_msgWnd, T(S_ABOUT_TEXT), T(S_ABOUT),
-                MB_OK | MB_ICONINFORMATION);
+    if (g_aboutWnd && IsWindow(g_aboutWnd)) { SetForegroundWindow(g_aboutWnd); return; }
+
+    static bool clsReady = false;
+    if (!clsReady) {
+        WNDCLASSEXW wc = { sizeof(wc) };
+        wc.lpfnWndProc = AboutProc;
+        wc.hInstance = g_hInst;
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+        wc.lpszClassName = L"RoachPetAbout";
+        RegisterClassExW(&wc);
+        clsReady = true;
+    }
+
+    float s = 1.0f;
+    {
+        HDC dc = GetDC(nullptr);
+        int dpi = GetDeviceCaps(dc, LOGPIXELSX);
+        ReleaseDC(nullptr, dc);
+        if (dpi > 0) s = dpi / 96.0f;
+        if (s < 0.8f) s = 0.8f;
+    }
+    auto S = [s](int v) { return (int)(v * s + 0.5f); };
+
+    HFONT fBody  = UiFont(9, false);
+    HFONT fTitle = UiFont(11, true);
+
+    const int pad = S(20);
+    const int cw  = S(470) - pad * 2;
+
+    // Measure the body text so the Chinese and English builds both fit exactly
+    // (the English paragraph wraps to more lines than the Chinese one).
+    int bodyH;
+    {
+        HDC dc = GetDC(nullptr);
+        HGDIOBJ old = SelectObject(dc, fTitle);
+        RECT mr = { 0, 0, cw, 0 };
+        DrawTextW(dc, T(S_ABOUT_TEXT), -1, &mr,
+                  DT_LEFT | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+        SelectObject(dc, old);
+        ReleaseDC(nullptr, dc);
+        bodyH = mr.bottom + S(6);
+        if (bodyH < S(48)) bodyH = S(48);
+    }
+
+    const int bodyY = S(16);
+    const int linkY = bodyY + bodyH + S(12);
+    const int linkH = S(22);
+    const int btnY  = linkY + linkH + S(16);
+    const int btnH  = S(28);
+    const int winH  = btnY + btnH + S(16);
+
+    RECT rc = { 0, 0, S(470), winH };
+    AdjustWindowRectEx(&rc, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
+    int ww = rc.right - rc.left, wh = rc.bottom - rc.top;
+    int wx = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
+    int wy = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
+
+    g_aboutWnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"RoachPetAbout", T(S_ABOUT),
+                                 WS_POPUP | WS_CAPTION | WS_SYSMENU,
+                                 wx, wy, ww, wh, g_setWnd, nullptr, g_hInst, nullptr);
+    if (!g_aboutWnd) return;
+
+    // --- version + the one paragraph worth reading
+    HWND t = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                             pad, bodyY, cw, bodyH, g_aboutWnd, nullptr, g_hInst, nullptr);
+    SendMessageW(t, WM_SETFONT, (WPARAM)fTitle, TRUE);
+    SetWindowTextW(t, T(S_ABOUT_TEXT));
+
+    // --- repository link (SysLink: clickable, keyboard reachable)
+    HWND link = CreateWindowExW(0, L"SysLink", T(S_ABOUT_LINK),
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                                pad, linkY, cw, linkH, g_aboutWnd, nullptr, g_hInst, nullptr);
+    if (link) SendMessageW(link, WM_SETFONT, (WPARAM)fBody, TRUE);
+
+    HWND ok = CreateWindowExW(0, L"BUTTON", T(S_BTNOK),
+                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+                              S(470) - pad - S(88), btnY, S(88), btnH,
+                              g_aboutWnd, (HMENU)IDOK, g_hInst, nullptr);
+    if (ok) SendMessageW(ok, WM_SETFONT, (WPARAM)fBody, TRUE);
+
+    if (g_setWnd && IsWindow(g_setWnd)) EnableWindow(g_setWnd, FALSE);
+    ShowWindow(g_aboutWnd, SW_SHOW);
+    SetForegroundWindow(g_aboutWnd);
+    if (ok) SetFocus(ok);
 }
 
 void AppCheckUpdate() {
@@ -230,8 +349,8 @@ void AppCheckUpdate() {
         return;
     }
     MessageBoxW(g_setWnd ? g_setWnd : g_msgWnd,
-                L"v1.1.0\n\n当前为本地构建，未配置远程更新源。\n如需启用，请在配置目录放置 update_url.txt。\n\n"
-                L"v1.1.0\n\nLocal build, no remote update source configured.\n"
+                L"v1.1.1\n\n当前为本地构建，未配置远程更新源。\n如需启用，请在配置目录放置 update_url.txt。\n\n"
+                L"v1.1.1\n\nLocal build, no remote update source configured.\n"
                 L"Drop an update_url.txt into the config folder to enable it.",
                 T(S_CHECKUPD), MB_OK | MB_ICONINFORMATION);
 }
@@ -617,11 +736,6 @@ static void BuildSettingsUI() {
     hRepo     = Mk(L"BUTTON", T(S_REPO), BS_PUSHBUTTON | WS_TABSTOP, C1 + 224, y, 104, 26, IDC_REPO);
     hAbout2   = Mk(L"BUTTON", T(S_ABOUT), BS_PUSHBUTTON | WS_TABSTOP, C1 + 336, y, 104, 26, IDC_ABOUT2);
     y += 34;
-    {
-        HWND t = Mk(L"STATIC", T(S_VER), SS_LEFT, C1, y, W - C1 * 2, 16, 0);
-        if (t && g_smallFont) SendMessageW(t, WM_SETFONT, (WPARAM)g_smallFont, TRUE);
-    }
-    y += 24;
 
     // ---------- 底部按钮 ----------
     const int clientH = y + 46;
@@ -729,6 +843,11 @@ static int  g_fsAcc = 0;
 static int  g_statAcc = 0;
 static int  g_occAcc = 0;
 static bool g_fsHidden = false;
+static bool g_perfLog = false;      // ROACH_PERF_LOG=1 -> log frame stalls
+
+static double MsSince(LARGE_INTEGER a, LARGE_INTEGER b, LARGE_INTEGER f) {
+    return (double)(b.QuadPart - a.QuadPart) * 1000.0 / (double)f.QuadPart;
+}
 
 int RunApp() {
     LogLine(L"run: refresh monitors");
@@ -765,6 +884,7 @@ int RunApp() {
     LogLine(L"run: init pacer");
 
     InitPacer();
+    g_perfLog = getenv("ROACH_PERF_LOG") != nullptr;
     LogLine(L"run: loop enter");
 
     LARGE_INTEGER freq, prev;
@@ -790,12 +910,20 @@ int RunApp() {
         prev = now;
         if (dt > 0.25f) dt = 0.25f;
         if (dt < 0.0005f) dt = 0.0005f;
+        if (g_perfLog && dt > 0.10f) LogLine(L"perf: frame %.0f ms", dt * 1000.0f);
 
         // ---- desktop poll (~every 600 ms)
         g_pollAcc += (int)(dt * 1000);
         if (g_pollAcc >= 600) {
             g_pollAcc = 0;
-            if (g_desk.Poll()) {
+            LARGE_INTEGER a, b; QueryPerformanceCounter(&a);
+            bool changed = g_desk.Poll();
+            QueryPerformanceCounter(&b);
+            if (g_perfLog) {
+                double ms = MsSince(a, b, freq);
+                if (ms > 40.0) LogLine(L"perf: desk poll %.0f ms", ms);
+            }
+            if (changed) {
                 LogLine(L"desktop changed: %d icons", (int)g_desk.icons().size());
             }
         }
@@ -804,7 +932,15 @@ int RunApp() {
         g_occAcc += (int)(dt * 1000);
         if (g_occAcc >= 180) {
             g_occAcc = 0;
-            if (g_cfg.hideOnApp) ZOrderRefresh();
+            if (g_cfg.hideOnApp) {
+                LARGE_INTEGER a, b; QueryPerformanceCounter(&a);
+                ZOrderRefresh();
+                QueryPerformanceCounter(&b);
+                if (g_perfLog) {
+                    double ms = MsSince(a, b, freq);
+                    if (ms > 40.0) LogLine(L"perf: zorder %.0f ms", ms);
+                }
+            }
         }
 
         // ---- periodic colony statistics
@@ -847,10 +983,16 @@ int RunApp() {
 
         // ---- simulation + paint
         if (!g_paused) {
+            LARGE_INTEGER a, b; QueryPerformanceCounter(&a);
             BugTickAll(dt, g_curBounds);
             if (g_visible) {
                 BugPresentAll();
                 PoopPresent();
+            }
+            QueryPerformanceCounter(&b);
+            if (g_perfLog) {
+                double ms = MsSince(a, b, freq);
+                if (ms > 60.0) LogLine(L"perf: paint %.0f ms", ms);
             }
         }
 
@@ -945,7 +1087,8 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR lpCmdLine, int) {
     ULONG_PTR gdipToken = 0;
     Gdiplus::GdiplusStartup(&gdipToken, &gi, nullptr);
 
-    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_BAR_CLASSES | ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS };
+    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_BAR_CLASSES | ICC_STANDARD_CLASSES |
+                                              ICC_UPDOWN_CLASS | ICC_LINK_CLASS };
     InitCommonControlsEx(&icc);
 
     ConfigLoad();
@@ -953,7 +1096,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // make sure the config dir + log exist
     AppDataDir();
-    LogLine(L"---- start v1.1.0 ----");
+    LogLine(L"---- start v1.1.1 ----");
 
     int rc = RunApp();
     (void)0;

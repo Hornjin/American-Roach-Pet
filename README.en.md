@@ -6,11 +6,9 @@
 
 ![All stages](docs/art.png)
 
-Native Win32 + GDI+, **a single executable with no runtime dependencies**. Every sprite is drawn frame-by-frame in vector code — there is not one bitmap asset in the project.
-
 | | |
 |---|---|
-| Version | v1.1.0 |
+| Version | v1.1.1 |
 | Platform | Windows 7 SP1 or later (x64, PerMonitorV2 DPI aware) |
 | Binary | `bin/RoachPet.exe`, ~341 KB |
 | Code | 7 source files, ~3,400 lines of C++17 |
@@ -70,11 +68,15 @@ Speed multipliers: adult 1.00 / juvenile 0.78 / hatchling 0.58. Body length is d
 `Wander → Flee / Eat / Poop / Hidden / Emerge`
 
 - **Wander** — picks a target inside the icon-dense region (80 px grid) and crawls there, occasionally pausing to rest. Steering has inertia, so it is real locomotion rather than translation.
-- **Hidden** — slips under an icon. The body is not drawn at all; only the icon's bitmap rectangle is excluded from the sprite, leaving two antennae sticking out.
+- **Hidden** — slips under an icon. The body is not drawn at all; only two antennae show. They are clipped against the icon's **real silhouette** (per-row opaque spans read from the icon bitmap's alpha channel), not its bounding box, so an antenna runs all the way to the drawn artwork instead of stopping in mid air over a transparent corner.
 - **Emerge / burstOut** — fires when the hiding place is uncovered (you moved the icon) or right after hatching.
 - **Flee** — triggered by the cursor passing over (`hover_flee`) or by a neighbour panicking; it cascades to everyone nearby.
 - **Eat** — gnaws on the target icon with a mandible animation, then hides that file and leaves frass behind.
 - **Poop** — drops frass across the desktop; it follows the same occlusion rules as the insects.
+
+Icon clipping, side by side — left is clipped by the bounding box, so the antenna is cut in mid air; right is clipped by the real silhouette, so it reaches the artwork:
+
+![icon silhouette clipping](docs/mask_compare.png)
 
 ### Eating files (fully reversible)
 
@@ -97,12 +99,12 @@ Restoring is the equivalent of `attrib -s -h`; the original attributes are repla
 | Settings → Files (reversible) → Restore all | Shows the current hidden count |
 | `RoachPet.exe --restore` | No UI — the option to use after a crash |
 
-### Desktop-layer occlusion (the v1.1.0 headline)
+### Desktop-layer occlusion (the v1.1.1 headline)
 
 In earlier builds the roach windows were `WS_EX_TOPMOST`, so opening Notepad left antennae floating on top of it. Every insect now runs an occlusion test before it is presented:
 
 1. Every 180 ms, `EnumWindows` collects the rectangles of all windows covering the desktop;
-2. System classes (`Progman` / `WorkerW` / `SHELLDLL_DefView` / `SysListView32` / the taskbar), ghost UWP windows reported by `DwmGetWindowAttribute(DWMWA_CLOAKED)`, `WS_EX_TRANSPARENT` windows, fully transparent layered windows, minimised windows and zero-sized windows are filtered out;
+2. System classes (`Progman` / `WorkerW` / `SHELLDLL_DefView` / `SysListView32` / the taskbar), ghost UWP windows reported by `DwmGetWindowAttribute(DWMWA_CLOAKED)`, `WS_EX_TRANSPARENT` windows, fully transparent layered windows, minimised windows and zero-sized windows are filtered out. So are **shell overlays** (`XamlExplorerHostIslandWindow` and other XAML islands, plus untitled non-activatable tool windows) — dragging a window makes Windows raise a full-screen snap preview, and treating it as an occluder made the whole colony vanish for the duration of the drag, which looked exactly like a freeze;
 3. The sprite rectangle is intersected with that set:
    - **fully covered** → `ShowWindow(SW_HIDE)`, not a single pixel is drawn;
    - **partially covered** → each intersecting rectangle is excluded via GDI+ `SetClip(CombineModeExclude)`, so a roach appears to crawl out from behind the window edge and never covers window content;
@@ -199,6 +201,10 @@ Development-only, not part of the release:
 | `winctl.exe <class> [top\|activate\|move x y\|close]` | Drive a window |
 | `maxwin.exe <class> [restore]` | Maximise / restore a window |
 | `deskicon.exe list\|move` | Read or move desktop icons |
+| `drag.exe <class> dx dy [steps] [ms]` / `drag.exe @ x y dx dy` | Simulate dragging a window or a desktop icon |
+| `bugpos.exe` | List every pet window's rect and visibility (touches no other process, safe mid-drag) |
+| `icontest.exe` | Print the opaque-silhouette stats of desktop icons |
+| `masktest.exe <out.png>` | Render a "rect clip vs silhouette clip" comparison |
 | `roachctl.exe <toggle\|settings\|pause\|clean\|restore\|quit>` | Command a running instance |
 | `preview.exe <out.png>` | Render the art sheet |
 

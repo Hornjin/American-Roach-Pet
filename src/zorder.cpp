@@ -38,9 +38,34 @@ bool SkipClass(const wchar_t* c) {
         L"tooltips_class32",
         L"#32768",              // popup menus
         L"TaskListThumbnailWnd",
+        // Shell overlays.  These are invisible-to-the-eye full screen layers
+        // that Windows raises while a window is being dragged (snap layouts /
+        // snap assist).  Treating one as an occluder hides the whole colony
+        // for the duration of the drag, which reads as "the pets froze".
+        L"XamlExplorerHostIslandWindow",
+        L"Windows.UI.Core.CoreWindow",
+        L"MultitaskingViewFrame",
+        L"ForegroundStaging",
+        L"TaskSwitcherWnd",
+        L"DV2ControlHost",
+        L"Windows.Internal.Shell.TabProxyWindow",
+        L"Shell_InputSwitchTopLevelWindow",
+        L"Windows.UI.Composition.DesktopWindowContentBridge",
     };
     for (const wchar_t* s : kSkip) if (!wcscmp(c, s)) return true;
+    // any other XAML island is shell UI, not an application window
+    if (!wcsncmp(c, L"Xaml", 4)) return true;
     return false;
+}
+
+// Full screen helper layers are not activatable and carry no caption.  Real
+// application windows - including borderless full screen games - either have a
+// caption or can take focus, so this only catches shell scaffolding.
+bool IsShellScaffold(HWND h, LONG_PTR style, LONG_PTR ex) {
+    if (!(ex & WS_EX_TOOLWINDOW)) return false;
+    if (ex & WS_EX_APPWINDOW) return false;
+    if (style & WS_CAPTION) return false;
+    return (ex & WS_EX_NOACTIVATE) != 0;
 }
 
 BOOL CALLBACK EnumOcc(HWND h, LPARAM lp) {
@@ -55,6 +80,9 @@ BOOL CALLBACK EnumOcc(HWND h, LPARAM lp) {
 
     LONG_PTR ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
     if (ex & WS_EX_TRANSPARENT) return TRUE;      // click-through overlay
+
+    LONG_PTR style = GetWindowLongPtrW(h, GWL_STYLE);
+    if (IsShellScaffold(h, style, ex)) return TRUE;
 
     // UWP shells keep their windows around but "cloaked" when not on screen
     BOOL cloaked = FALSE;
@@ -75,6 +103,12 @@ BOOL CALLBACK EnumOcc(HWND h, LPARAM lp) {
     if (!GetWindowRect(h, &r)) return TRUE;
     if (r.right - r.left < 2 || r.bottom - r.top < 2) return TRUE;
 
+    if (getenv("ROACH_ZORDER_LOG")) {
+        DWORD pid = 0; GetWindowThreadProcessId(h, &pid);
+        LogLine(L"occ %p pid=%lu [%ls] %ld,%ld %ldx%ld", (void*)h, (unsigned long)pid, cls,
+                (long)r.left, (long)r.top,
+                (long)(r.right - r.left), (long)(r.bottom - r.top));
+    }
     out->push_back(r);
     return TRUE;
 }
