@@ -57,6 +57,115 @@ static float g_uiScale = 1.0f;
 static int   Sc(int v) { return (int)(v * g_uiScale + 0.5f); }
 
 // =========================================================================
+// settings theme — "specimen card"
+//
+// The pet is a red-brown cockroach; the interface borrows the language of an
+// entomology specimen drawer rather than the usual grey Windows sheet: one
+// sheet of white card laid on a warm paper-grey desk, each section flagged
+// with a short carapace-brown marker, sections separated by hairlines.
+// Nothing here is decoration for its own sake — every colour has a job.
+// =========================================================================
+static const COLORREF kDesk      = RGB(0xED, 0xE7, 0xDD);   // desk behind the card
+static const COLORREF kCard      = RGB(0xFF, 0xFF, 0xFF);   // the card
+static const COLORREF kCardEdge  = RGB(0xE4, 0xDA, 0xCC);   // card hairline
+static const COLORREF kRule      = RGB(0xE7, 0xDD, 0xCE);   // section rule
+static const COLORREF kCarapace  = RGB(0x7A, 0x2E, 0x12);   // section marker, primary button
+static const COLORREF kCarapaceD = RGB(0x5E, 0x22, 0x0C);   // primary button, pressed
+static const COLORREF kCarapaceH = RGB(0x8E, 0x3A, 0x1A);   // primary button, hot
+static const COLORREF kInk       = RGB(0x2E, 0x24, 0x20);   // section headings
+static const COLORREF kBody      = RGB(0x4A, 0x3F, 0x38);   // labels, values
+static const COLORREF kFieldEdge = RGB(0xD5, 0xCA, 0xBD);   // control borders
+static const COLORREF kBtnEdge   = RGB(0xD5, 0xCA, 0xBD);   // secondary buttons
+static const COLORREF kBtnHot    = RGB(0xF6, 0xF1, 0xE9);   // secondary buttons, hot
+
+struct SetSection { const wchar_t* title; int titleY; int ruleY; };
+static std::vector<SetSection> g_secs;
+static std::vector<HWND>       g_chks;      // owner-drawn checkboxes
+static int    g_cardTop = 0, g_cardBot = 0;
+static HBRUSH g_brCard = nullptr, g_brDesk = nullptr;
+
+static bool IsOwnerCheck(HWND h) {
+    for (HWND c : g_chks) if (c == h) return true;
+    return false;
+}
+
+static void FillRoundRectG(HDC dc, const RECT& r, int rad, COLORREF fill, COLORREF edge) {
+    HBRUSH  br = CreateSolidBrush(fill);
+    HPEN    pn = CreatePen(PS_SOLID, 1, edge);
+    HGDIOBJ ob = SelectObject(dc, br), op = SelectObject(dc, pn);
+    RoundRect(dc, r.left, r.top, r.right, r.bottom, rad * 2, rad * 2);
+    SelectObject(dc, ob);
+    SelectObject(dc, op);
+    DeleteObject(br);
+    DeleteObject(pn);
+}
+
+static void FillRectC(HDC dc, const RECT& r, COLORREF c) {
+    HBRUSH br = CreateSolidBrush(c);
+    FillRect(dc, &r, br);
+    DeleteObject(br);
+}
+
+// 15px box, carapace fill when on, a tick drawn with two strokes.
+static void DrawOwnerCheck(HDC dc, const RECT& rc, const wchar_t* text,
+                           bool on, bool pressed, bool focus) {
+    FillRectC(dc, rc, kCard);
+
+    const int box = Sc(15);
+    const int cy  = (rc.top + rc.bottom) / 2;
+    RECT b = { rc.left + Sc(1), cy - box / 2, rc.left + Sc(1) + box, cy - box / 2 + box };
+    COLORREF fill = on ? (pressed ? kCarapaceD : kCarapace) : (pressed ? kBtnHot : kCard);
+    FillRoundRectG(dc, b, Sc(3), fill, on ? fill : kFieldEdge);
+
+    if (on) {
+        HPEN p = CreatePen(PS_SOLID, Sc(2), kCard);
+        HGDIOBJ op = SelectObject(dc, p);
+        MoveToEx(dc, b.left + box / 4, cy + Sc(1), nullptr);
+        LineTo(dc, b.left + box / 2 - Sc(1), b.bottom - box / 3);
+        LineTo(dc, b.right - box / 4, b.top + box / 3);
+        SelectObject(dc, op);
+        DeleteObject(p);
+    }
+
+    RECT tr = rc;
+    tr.left = b.right + Sc(8);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, kBody);
+    DrawTextW(dc, text, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    if (focus) {
+        RECT f = { b.left - Sc(2), b.top - Sc(2), tr.right, tr.bottom + Sc(2) };
+        DrawFocusRect(dc, &f);
+    }
+}
+
+static void DrawOwnerPush(HDC dc, const RECT& rc, const wchar_t* text,
+                          bool primary, bool pressed, bool focus) {
+    COLORREF fill, edge, ink;
+    if (primary) {
+        fill = pressed ? kCarapaceD : kCarapace;
+        edge = fill;
+        ink  = kCard;
+    } else {
+        fill = pressed ? kBtnHot : kCard;
+        edge = kBtnEdge;
+        ink  = kBody;
+    }
+    FillRoundRectG(dc, rc, Sc(5), fill, edge);
+
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, ink);
+    RECT tr = rc;
+    DrawTextW(dc, text, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    if (focus) {
+        RECT f = rc;
+        InflateRect(&f, -Sc(3), -Sc(3));
+        DrawFocusRect(dc, &f);
+    }
+}
+
+// =========================================================================
 // helpers
 // =========================================================================
 static void OpenFolderOf(const std::wstring& path) {
@@ -409,13 +518,16 @@ static HWND Mk(const wchar_t* cls, const wchar_t* text, DWORD style,
     return c;
 }
 
-static void SectionLabel(const wchar_t* text, int x, int y, int w) {
-    HWND h = Mk(L"STATIC", text, SS_LEFT, x, y, w, 20, 0);
-    if (h && g_boldFont) SendMessageW(h, WM_SETFONT, (WPARAM)g_boldFont, TRUE);
-}
+// section headings are painted directly in WM_PAINT (see SetWndProc)
 
-static void SetCheck(HWND h, bool v) { SendMessageW(h, BM_SETCHECK, v ? BST_CHECKED : BST_UNCHECKED, 0); }
-static bool GetCheck(HWND h) { return SendMessageW(h, BM_GETCHECK, 0, 0) == BST_CHECKED; }
+// BS_OWNERDRAW buttons ignore BM_SETCHECK/BM_GETCHECK entirely, so the
+// checked state lives in GWLP_USERDATA; the checkbox repaints from there.
+static void SetCheck(HWND h, bool v) {
+    if (!h) return;
+    SetWindowLongPtrW(h, GWLP_USERDATA, v ? 1 : 0);
+    InvalidateRect(h, nullptr, TRUE);
+}
+static bool GetCheck(HWND h) { return h && GetWindowLongPtrW(h, GWLP_USERDATA) != 0; }
 
 static int ComboSel(HWND h) { return (int)SendMessageW(h, CB_GETCURSEL, 0, 0); }
 static void ComboSet(HWND h, int i) { SendMessageW(h, CB_SETCURSEL, i, 0); }
@@ -438,11 +550,124 @@ static int IndexToFps(int i) {
 
 static void BuildSettingsUI();
 
+// Paint the frame in the card's own palette so the title bar does not look
+// bolted on. Every attribute is best-effort: older Windows just ignores it.
+static void StyleCaption(HWND h) {
+    typedef HRESULT (WINAPI *PFN)(HWND, DWORD, LPCVOID, DWORD);
+    static PFN pSet = nullptr;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        HMODULE m = LoadLibraryW(L"dwmapi.dll");
+        if (m) pSet = (PFN)GetProcAddress(m, "DwmSetWindowAttribute");
+    }
+    if (!pSet) return;
+    BOOL dark = FALSE;                          // DWMWA_USE_IMMERSIVE_DARK_MODE
+    pSet(h, 20, &dark, sizeof(dark));
+    COLORREF cap = kDesk, txt = kInk;           // DWMWA_CAPTION_COLOR / DWMWA_TEXT_COLOR
+    pSet(h, 35, &cap, sizeof(cap));
+    pSet(h, 36, &txt, sizeof(txt));
+}
+
 static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
+    case WM_ERASEBKGND:
+        return 1;                       // WM_PAINT owns the whole client area
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(h, &ps);
+        RECT rc;
+        GetClientRect(h, &rc);
+
+        HDC     mem = CreateCompatibleDC(dc);
+        HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
+        HGDIOBJ ob  = SelectObject(mem, bmp);
+
+        FillRectC(mem, rc, kDesk);
+
+        RECT cr = { Sc(14), Sc(g_cardTop), rc.right - Sc(14), Sc(g_cardBot) };
+        FillRoundRectG(mem, cr, Sc(10), kCard, kCardEdge);
+
+        for (const auto& s : g_secs) {
+            // short carapace marker beside the heading, like a specimen flag
+            RECT mk = { cr.left + Sc(20), Sc(s.titleY) + Sc(5),
+                        cr.left + Sc(23), Sc(s.titleY) + Sc(19) };
+            FillRectC(mem, mk, kCarapace);
+
+            RECT tr = { cr.left + Sc(31), Sc(s.titleY), cr.right - Sc(20), Sc(s.titleY) + Sc(22) };
+            SetBkMode(mem, TRANSPARENT);
+            SetTextColor(mem, kInk);
+            HGDIOBJ of = SelectObject(mem, g_boldFont);
+            DrawTextW(mem, s.title, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            SelectObject(mem, of);
+
+            if (s.ruleY > 0) {
+                RECT rl = { cr.left + Sc(20), Sc(s.ruleY), cr.right - Sc(20), Sc(s.ruleY) + 1 };
+                FillRectC(mem, rl, kRule);
+            }
+        }
+
+        // hairline above the button row
+        {
+            int y = Sc(g_cardBot) + Sc(12);
+            RECT rl = { Sc(14), y, rc.right - Sc(14), y + 1 };
+            FillRectC(mem, rl, kCardEdge);
+        }
+
+        BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+        SelectObject(mem, ob);
+        DeleteObject(bmp);
+        DeleteDC(mem);
+        EndPaint(h, &ps);
+        return 0;
+    }
+
+    case WM_CTLCOLORSTATIC: {
+        HDC cdc = (HDC)w;
+        HWND who = (HWND)l;
+        SetBkMode(cdc, TRANSPARENT);
+        if (who == hOpacityLbl) {
+            SetTextColor(cdc, kCarapace);
+        } else {
+            SetTextColor(cdc, kBody);
+        }
+        // the trackbar paints its own background from this brush
+        if (who == hOpacity) return (LRESULT)g_brCard;
+        return (LRESULT)GetStockObject(HOLLOW_BRUSH);
+    }
+
+    case WM_CTLCOLOREDIT: {
+        HDC cdc = (HDC)w;
+        SetBkColor(cdc, kCard);
+        SetTextColor(cdc, kBody);
+        return (LRESULT)g_brCard;
+    }
+
+    case WM_DRAWITEM: {
+        LPDRAWITEMSTRUCT di = (LPDRAWITEMSTRUCT)l;
+        if (di->CtlType != ODT_BUTTON) break;
+        wchar_t txt[160] = {0};
+        GetWindowTextW(di->hwndItem, txt, 160);
+        bool pressed = (di->itemState & ODS_SELECTED) != 0;
+        bool focus   = (di->itemState & ODS_FOCUS) != 0;
+        if (IsOwnerCheck(di->hwndItem)) {
+            bool on = GetCheck(di->hwndItem);
+            DrawOwnerCheck(di->hDC, di->rcItem, txt, on, pressed, focus);
+        } else {
+            DrawOwnerPush(di->hDC, di->rcItem, txt, di->CtlID == IDC_OK, pressed, focus);
+        }
+        return TRUE;
+    }
+
     case WM_COMMAND: {
         int id = LOWORD(w);
         int code = HIWORD(w);
+        HWND ctl = (HWND)l;
+        // BS_OWNERDRAW checkboxes do not toggle themselves
+        if (code == BN_CLICKED && IsOwnerCheck(ctl)) {
+            SetCheck(ctl, !GetCheck(ctl));
+        }
         if (id == IDC_OPACITY && code == 0) {
             int v = (int)SendMessageW(hOpacity, TBM_GETPOS, 0, 0);
             wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
@@ -556,7 +781,7 @@ static void BuildSettingsUI() {
         wc.lpfnWndProc = SetWndProc;
         wc.hInstance = g_hInst;
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+        wc.hbrBackground = nullptr;    // WM_PAINT paints the desk
         wc.lpszClassName = L"RoachPetSettings";
         wc.hIcon = g_trayIcon ? g_trayIcon : LoadIcon(nullptr, IDI_APPLICATION);
         RegisterClassExW(&wc);
@@ -580,6 +805,13 @@ static void BuildSettingsUI() {
     g_boldFont = UiFont(10, true);
     g_smallFont = UiFont(8, false);
 
+    if (g_brCard) DeleteObject(g_brCard);
+    if (g_brDesk) DeleteObject(g_brDesk);
+    g_brCard = CreateSolidBrush(kCard);
+    g_brDesk = CreateSolidBrush(kDesk);
+    g_secs.clear();
+    g_chks.clear();
+
     const int W = 660;
     RECT wa = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
@@ -589,30 +821,44 @@ static void BuildSettingsUI() {
                                kStyle, 0, 0, Sc(W), 300, nullptr, nullptr, g_hInst, nullptr);
     if (!g_setWnd) return;
 
-    const int C1 = 16, L1 = 118, W1 = 132;     // left column
-    const int C2 = 340, L2 = 452, W2 = 160;    // right column
+    // card inset 14, content inset 20 inside the card
+    const int C1 = 34, L1 = 146, W1 = 130;     // left column
+    const int C2 = 352, L2 = 464, W2 = 160;    // right column
 
     auto lbl = [&](const wchar_t* t, int x, int yy, int w) {
         return Mk(L"STATIC", t, SS_LEFT, x, yy + 4, w, 18, 0);
     };
     auto chk = [&](const wchar_t* t, int x, int yy, int id) {
-        return Mk(L"BUTTON", t, BS_AUTOCHECKBOX | WS_TABSTOP, x, yy, 280, 22, id);
+        HWND c = Mk(L"BUTTON", t, BS_OWNERDRAW | WS_TABSTOP, x, yy, 268, 24, id);
+        if (c) g_chks.push_back(c);
+        return c;
     };
     auto cmb = [&](int x, int yy, int w, int id) {
         return Mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, x, yy, w, 240, id);
     };
+    auto hint = [&](const wchar_t* t, int x, int yy, int w, int hh = 18) {
+        HWND s = Mk(L"STATIC", t, SS_LEFT, x, yy, w, hh, 0);
+        if (s && g_smallFont) SendMessageW(s, WM_SETFONT, (WPARAM)g_smallFont, TRUE);
+        return s;
+    };
+    // section headings are painted by WM_PAINT, not owned by a control
+    auto section = [&](const wchar_t* t, int yy) {
+        if (!g_secs.empty()) g_secs.back().ruleY = yy - 9;
+        g_secs.push_back({ t, yy, 0 });
+    };
 
-    int y = 10;
+    g_cardTop = 14;
+    int y = g_cardTop + 12;
 
     // ---------- 性能 ----------
-    SectionLabel(T(S_SEC_PERF), C1, y, 300); y += 22;
+    section(T(S_SEC_PERF), y); y += 24;
     lbl(T(S_FPS), C1, y, L1 - C1 - 4);
     hFps = cmb(L1, y, W1, IDC_FPS);
     FillFpsCombo(hFps);
     ComboSet(hFps, FpsToIndex(g_cfg.fps));
     hIdle = chk(T(S_IDLE), C2, y, IDC_IDLE);
     SetCheck(hIdle, g_cfg.idleThrottle);
-    y += 30;
+    y += 28;
     lbl(T(S_MAXBUG), C1, y, L1 - C1 - 4);
     hMaxBug = Mk(L"EDIT", L"", ES_NUMBER | WS_BORDER | WS_TABSTOP, L1, y, 56, 22, IDC_MAXBUG);
     SetWindowTextW(hMaxBug, std::to_wstring(g_cfg.maxBugs).c_str());
@@ -629,7 +875,7 @@ static void BuildSettingsUI() {
     y += 34;
 
     // ---------- 外观 ----------
-    SectionLabel(T(S_SEC_LOOK), C1, y, 300); y += 22;
+    section(T(S_SEC_LOOK), y); y += 24;
     lbl(T(S_OPACITY), C1, y, L1 - C1 - 4);
     hOpacity = Mk(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS, L1, y, W1, 24, IDC_OPACITY);
     SendMessageW(hOpacity, TBM_SETRANGE, TRUE, MAKELONG(30, 100));
@@ -641,7 +887,7 @@ static void BuildSettingsUI() {
     }
     hDebugBg = chk(T(S_DEBUGBG), C2, y, IDC_DEBUGBG);
     SetCheck(hDebugBg, g_cfg.debugBg);
-    y += 34;
+    y += 28;
     lbl(T(S_SCALE), C1, y, L1 - C1 - 4);
     hScale = cmb(L1, y, W1, IDC_SCALE);
     {
@@ -654,7 +900,7 @@ static void BuildSettingsUI() {
     }
     hTray = chk(T(S_TRAY), C2, y, IDC_TRAY);
     SetCheck(hTray, g_cfg.showTray);
-    y += 30;
+    y += 28;
     lbl(T(S_LANG), C1, y, L1 - C1 - 4);
     hLang = cmb(L1, y, W1, IDC_LANG);
     SendMessageW(hLang, CB_ADDSTRING, 0, (LPARAM)T(S_LANG_ZH));
@@ -663,7 +909,7 @@ static void BuildSettingsUI() {
     y += 34;
 
     // ---------- 行为 ----------
-    SectionLabel(T(S_SEC_BEHAVE), C1, y, 300); y += 22;
+    section(T(S_SEC_BEHAVE), y); y += 24;
     hThrough = chk(T(S_THROUGH), C1, y, IDC_THROUGH);
     SetCheck(hThrough, g_cfg.clickThrough);
     hHover = chk(T(S_HOVER), C2, y, IDC_HOVER);
@@ -681,14 +927,11 @@ static void BuildSettingsUI() {
     y += 28;
     hHideOnApp = chk(T(S_HIDEONAPP), C1, y, IDC_HIDEONAPP);
     SetCheck(hHideOnApp, g_cfg.hideOnApp);
-    {
-        HWND t = Mk(L"STATIC", T(S_HIDEONAPP_TIP), SS_LEFT, C2, y + 3, W - C2 - C1, 18, 0);
-        if (t && g_smallFont) SendMessageW(t, WM_SETFONT, (WPARAM)g_smallFont, TRUE);
-    }
-    y += 32;
+    hint(T(S_HIDEONAPP_TIP), C2, y + 3, 626 - C2);
+    y += 34;
 
     // ---------- 显示 ----------
-    SectionLabel(T(S_SEC_DISPLAY), C1, y, 300); y += 22;
+    section(T(S_SEC_DISPLAY), y); y += 24;
     lbl(T(S_MONITOR), C1, y, L1 - C1 - 4);
     hMonitor = cmb(L1, y, W1, IDC_MONITOR);
     SendMessageW(hMonitor, CB_ADDSTRING, 0, (LPARAM)T(S_MON_ALL));
@@ -708,40 +951,40 @@ static void BuildSettingsUI() {
     y += 34;
 
     // ---------- 文件 ----------
-    SectionLabel(T(S_SEC_FILE), C1, y, 300); y += 22;
+    section(T(S_SEC_FILE), y); y += 24;
     {
         wchar_t b[160];
         swprintf(b, 160, L"%ls%d", T(S_HIDDEN_CNT), g_desk.HiddenCount());
         hHiddenCnt = Mk(L"STATIC", b, SS_LEFT, C1, y + 5, 190, 18, IDC_HIDDENCNT);
     }
-    hRestore = Mk(L"BUTTON", T(S_RESTORE_ALL), BS_PUSHBUTTON | WS_TABSTOP, 214, y, 104, 26, IDC_RESTORE);
-    hOpenLog = Mk(L"BUTTON", T(S_OPENLOG), BS_PUSHBUTTON | WS_TABSTOP, 326, y, 104, 26, IDC_OPENLOG);
-    hOpenCfg = Mk(L"BUTTON", T(S_OPENCFG), BS_PUSHBUTTON | WS_TABSTOP, 438, y, 104, 26, IDC_OPENCFG);
-    y += 32;
-    {
-        HWND t = Mk(L"STATIC", T(S_EATEN_TIP), SS_LEFT, C1, y, W - C1 * 2, 18, 0);
-        if (t && g_smallFont) SendMessageW(t, WM_SETFONT, (WPARAM)g_smallFont, TRUE);
-    }
-    y += 26;
+    hRestore = Mk(L"BUTTON", T(S_RESTORE_ALL), BS_OWNERDRAW | WS_TABSTOP, 232, y, 110, 26, IDC_RESTORE);
+    hOpenLog = Mk(L"BUTTON", T(S_OPENLOG), BS_OWNERDRAW | WS_TABSTOP, 348, y, 110, 26, IDC_OPENLOG);
+    hOpenCfg = Mk(L"BUTTON", T(S_OPENCFG), BS_OWNERDRAW | WS_TABSTOP, 464, y, 110, 26, IDC_OPENCFG);
+    y += 28;
+    hint(T(S_EATEN_TIP), C1, y, 626 - C1, g_cfg.lang ? 34 : 18);
+    y += g_cfg.lang ? 40 : 24;
 
     // ---------- 快捷键 ----------
-    SectionLabel(T(S_SEC_HOTKEY), C1, y, 300); y += 22;
-    Mk(L"STATIC", T(S_HK_TIP), SS_LEFT, C1, y, W - C1 * 2, 18, 0);
-    y += 26;
+    section(T(S_SEC_HOTKEY), y); y += 24;
+    Mk(L"STATIC", T(S_HK_TIP), SS_LEFT, C1, y, 626 - C1, 18, 0);
+    y += 34;
 
     // ---------- 其它 ----------
-    SectionLabel(T(S_SEC_MISC), C1, y, 300); y += 22;
-    hCheckUpd = Mk(L"BUTTON", T(S_CHECKUPD), BS_PUSHBUTTON | WS_TABSTOP, C1, y, 104, 26, IDC_CHECKUPD);
-    hLogBtn   = Mk(L"BUTTON", T(S_OPENLOGFILE), BS_PUSHBUTTON | WS_TABSTOP, C1 + 112, y, 104, 26, IDC_LOGBTN);
-    hRepo     = Mk(L"BUTTON", T(S_REPO), BS_PUSHBUTTON | WS_TABSTOP, C1 + 224, y, 104, 26, IDC_REPO);
-    hAbout2   = Mk(L"BUTTON", T(S_ABOUT), BS_PUSHBUTTON | WS_TABSTOP, C1 + 336, y, 104, 26, IDC_ABOUT2);
+    section(T(S_SEC_MISC), y); y += 24;
+    hCheckUpd = Mk(L"BUTTON", T(S_CHECKUPD), BS_OWNERDRAW | WS_TABSTOP, C1, y, 110, 26, IDC_CHECKUPD);
+    hLogBtn   = Mk(L"BUTTON", T(S_OPENLOGFILE), BS_OWNERDRAW | WS_TABSTOP, C1 + 116, y, 110, 26, IDC_LOGBTN);
+    hRepo     = Mk(L"BUTTON", T(S_REPO), BS_OWNERDRAW | WS_TABSTOP, C1 + 232, y, 110, 26, IDC_REPO);
+    hAbout2   = Mk(L"BUTTON", T(S_ABOUT), BS_OWNERDRAW | WS_TABSTOP, C1 + 348, y, 110, 26, IDC_ABOUT2);
     y += 34;
 
     // ---------- 底部按钮 ----------
-    const int clientH = y + 46;
-    hOK     = Mk(L"BUTTON", T(S_BTNOK), BS_DEFPUSHBUTTON | WS_TABSTOP, W - 312, clientH - 38, 90, 28, IDC_OK);
-    hCancel = Mk(L"BUTTON", T(S_BTNCANCEL), BS_PUSHBUTTON | WS_TABSTOP, W - 212, clientH - 38, 90, 28, IDC_CANCEL);
-    hApply  = Mk(L"BUTTON", T(S_APPLY), BS_PUSHBUTTON | WS_TABSTOP, W - 112, clientH - 38, 90, 28, IDC_APPLY);
+    // the card ends here; the button row sits on the desk below a hairline
+    g_cardBot = y + 2;
+    const int clientH = g_cardBot + 12 + 12 + 28 + 12;
+    const int by = clientH - 12 - 28;
+    hOK     = Mk(L"BUTTON", T(S_BTNOK), BS_OWNERDRAW | WS_TABSTOP, W - 310, by, 92, 28, IDC_OK);
+    hCancel = Mk(L"BUTTON", T(S_BTNCANCEL), BS_OWNERDRAW | WS_TABSTOP, W - 208, by, 92, 28, IDC_CANCEL);
+    hApply  = Mk(L"BUTTON", T(S_APPLY), BS_OWNERDRAW | WS_TABSTOP, W - 106, by, 92, 28, IDC_APPLY);
 
     // ---------- 尺寸与居中 ----------
     RECT rc = { 0, 0, Sc(W), Sc(clientH) };
@@ -767,6 +1010,7 @@ static void BuildSettingsUI() {
     ShowWindow(g_setWnd, SW_SHOWNORMAL);
     if (IsIconic(g_setWnd)) ShowWindow(g_setWnd, SW_RESTORE);
     SetWindowPos(g_setWnd, HWND_TOPMOST, sx, sy, outW, outH, SWP_SHOWWINDOW);
+    StyleCaption(g_setWnd);
     SetForegroundWindow(g_setWnd);
     UpdateWindow(g_setWnd);
     BugSetTopmost(false);      // keep the pets below the dialog

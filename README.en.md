@@ -99,7 +99,7 @@ Restoring is the equivalent of `attrib -s -h`; the original attributes are repla
 | Settings → Files (reversible) → Restore all | Shows the current hidden count |
 | `RoachPet.exe --restore` | No UI — the option to use after a crash |
 
-### Desktop-layer occlusion (the v1.1.1 headline)
+### Desktop-layer occlusion
 
 In earlier builds the roach windows were `WS_EX_TOPMOST`, so opening Notepad left antennae floating on top of it. Every insect now runs an occlusion test before it is presented:
 
