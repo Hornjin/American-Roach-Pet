@@ -89,6 +89,9 @@ static const LStr kStr[] = {
                        L"HuangJHong/American-Roach-Pet</a>",
                        L"GitHub repository: <a href=\"https://github.com/HuangJHong/American-Roach-Pet\">"
                        L"HuangJHong/American-Roach-Pet</a>" },
+/*S_FLEESPD*/        { L"逃窜速度", L"Flee speed" },
+/*S_FLEESPD_TIP*/    { L"受惊冲刺的快慢，上限为默认的 3 倍",
+                       L"Sprint speed when startled, up to 3\u00d7 default" },
 };
 
 const wchar_t* T(int id) {
@@ -168,6 +171,9 @@ void ConfigLoad() {
     g_cfg.eatEnabled     = IniGetInt(L"behave", L"eat_files", 1) != 0;
     g_cfg.poopEnabled    = IniGetInt(L"behave", L"poop", 1) != 0;
     g_cfg.hideOnApp      = IniGetInt(L"behave", L"hide_on_app", 1) != 0;
+    g_cfg.fleeSpeed      = IniGetInt(L"behave", L"flee_speed", 100);
+    if (g_cfg.fleeSpeed < 50)  g_cfg.fleeSpeed = 50;
+    if (g_cfg.fleeSpeed > 300) g_cfg.fleeSpeed = 300;
     g_cfg.eatIntervalSec = IniGetInt(L"behave", L"eat_interval", 40);
     g_cfg.maxHiddenFiles = IniGetInt(L"behave", L"max_hidden", 200);
 
@@ -214,6 +220,7 @@ void ConfigSave() {
     IniSetInt(L"behave", L"eat_files", g_cfg.eatEnabled ? 1 : 0);
     IniSetInt(L"behave", L"poop", g_cfg.poopEnabled ? 1 : 0);
     IniSetInt(L"behave", L"hide_on_app", g_cfg.hideOnApp ? 1 : 0);
+    IniSetInt(L"behave", L"flee_speed", g_cfg.fleeSpeed);
     IniSetInt(L"behave", L"eat_interval", g_cfg.eatIntervalSec);
     IniSetInt(L"behave", L"max_hidden", g_cfg.maxHiddenFiles);
 

@@ -78,6 +78,7 @@ struct Config {
     bool eatEnabled      = true;
     bool poopEnabled     = true;
     bool hideOnApp       = true;   // disappear behind normal app windows
+    int  fleeSpeed       = 100;    // percent of normal flee speed, 50..300
     int  eatIntervalSec  = 40;     // min seconds between two meals
     int  maxHiddenFiles  = 200;
 
@@ -129,7 +130,7 @@ enum StrId {
     S_LANG_ZH, S_LANG_EN, S_ALREADY_LATEST, S_RESTORE_OK, S_RESTORE_NONE, S_RESTORE_CONFIRM,
     S_ABOUT_TEXT, S_HK_TIP, S_NEED_ADMIN, S_TRAY_TIP,
     S_PAUSE, S_OPENLOGFILE, S_EATEN_TIP,
-    S_HIDEONAPP, S_HIDEONAPP_TIP, S_ABOUT_LINK,
+    S_HIDEONAPP, S_HIDEONAPP_TIP, S_ABOUT_LINK, S_FLEESPD, S_FLEESPD_TIP,
     S_COUNT,
 };
 const wchar_t* T(int id);

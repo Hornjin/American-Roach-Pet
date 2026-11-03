@@ -74,10 +74,6 @@ Speed multipliers: adult 1.00 / juvenile 0.78 / hatchling 0.58. Body length is d
 - **Eat** — gnaws on the target icon with a mandible animation, then hides that file and leaves frass behind.
 - **Poop** — drops frass across the desktop; it follows the same occlusion rules as the insects.
 
-Icon clipping, side by side — left is clipped by the bounding box, so the antenna is cut in mid air; right is clipped by the real silhouette, so it reaches the artwork:
-
-![icon silhouette clipping](docs/mask_compare.png)
-
 ### Eating files (fully reversible)
 
 "Eating" only sets the `Hidden + System` attributes — the equivalent of:

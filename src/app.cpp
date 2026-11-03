@@ -40,14 +40,14 @@ enum {
     IDC_AUTOSTART, IDC_MONITOR, IDC_BOUNDS, IDC_HIDDENCNT, IDC_RESTORE,
     IDC_OPENLOG, IDC_OPENCFG, IDC_CHECKUPD, IDC_REPO, IDC_ABOUT2,
     IDC_OK, IDC_CANCEL, IDC_APPLY, IDC_OPACITYLBL, IDC_PAUSE, IDC_LOGBTN,
-    IDC_HIDEONAPP
+    IDC_HIDEONAPP, IDC_FLEESPD, IDC_FLEESPDLBL
 };
 
 static HWND hFps, hIdle, hMaxBug, hScale, hOpacity, hDebugBg, hLang, hTray,
             hThrough, hHover, hEat, hPoop, hFullscr, hAutostart, hMonitor,
             hBounds, hHiddenCnt, hRestore, hOpenLog, hOpenCfg, hCheckUpd,
             hRepo, hAbout2, hOK, hCancel, hApply, hOpacityLbl, hPause, hLogBtn,
-            hHideOnApp;
+            hHideOnApp, hFleeSpd, hFleeSpdLbl;
 static HFONT g_uiFont = nullptr;
 static HFONT g_boldFont = nullptr;
 static HFONT g_smallFont = nullptr;
@@ -674,6 +674,12 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             SetWindowTextW(hOpacityLbl, b);
             return 0;
         }
+        if (id == IDC_FLEESPD && code == 0) {
+            int v = (int)SendMessageW(hFleeSpd, TBM_GETPOS, 0, 0);
+            wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
+            SetWindowTextW(hFleeSpdLbl, b);
+            return 0;
+        }
         if (id == IDC_OK || id == IDC_APPLY) {
             // ---- read back
             int oldLang = g_cfg.lang;
@@ -700,6 +706,7 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             g_cfg.eatEnabled  = GetCheck(hEat);
             g_cfg.poopEnabled = GetCheck(hPoop);
             g_cfg.hideOnApp   = GetCheck(hHideOnApp);
+            g_cfg.fleeSpeed   = (int)SendMessageW(hFleeSpd, TBM_GETPOS, 0, 0);
             g_cfg.hideFullscreen = GetCheck(hFullscr);
             g_cfg.autostart   = GetCheck(hAutostart);
             g_cfg.monitor     = ComboSel(hMonitor);
@@ -758,6 +765,16 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             return 0;
         }
         if (id == IDC_ABOUT2)   { AppShowAbout(); return 0; }
+        break;
+    }
+    case WM_HSCROLL: {
+        // trackbars report through WM_HSCROLL; keep both % labels live
+        HWND ctl = (HWND)l;
+        if (ctl == hOpacity || ctl == hFleeSpd) {
+            int v = (int)SendMessageW(ctl, TBM_GETPOS, 0, 0);
+            wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
+            SetWindowTextW(ctl == hOpacity ? hOpacityLbl : hFleeSpdLbl, b);
+        }
         break;
     }
     case WM_CLOSE:
@@ -928,6 +945,17 @@ static void BuildSettingsUI() {
     hHideOnApp = chk(T(S_HIDEONAPP), C1, y, IDC_HIDEONAPP);
     SetCheck(hHideOnApp, g_cfg.hideOnApp);
     hint(T(S_HIDEONAPP_TIP), C2, y + 3, 626 - C2);
+    y += 28;
+    lbl(T(S_FLEESPD), C1, y, L1 - C1 - 4);
+    hFleeSpd = Mk(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS, L1, y, W1, 24, IDC_FLEESPD);
+    SendMessageW(hFleeSpd, TBM_SETRANGE, TRUE, MAKELONG(50, 300));
+    SendMessageW(hFleeSpd, TBM_SETPOS, TRUE, g_cfg.fleeSpeed);
+    hFleeSpdLbl = Mk(L"STATIC", L"", SS_LEFT, L1 + W1 + 6, y + 5, 44, 18, IDC_FLEESPDLBL);
+    {
+        wchar_t b[32]; swprintf(b, 32, L"%d%%", g_cfg.fleeSpeed);
+        SetWindowTextW(hFleeSpdLbl, b);
+    }
+    hint(T(S_FLEESPD_TIP), C2, y + 3, 626 - C2);
     y += 34;
 
     // ---------- 显示 ----------

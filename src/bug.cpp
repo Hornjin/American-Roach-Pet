@@ -261,7 +261,8 @@ void Bug::panicFrom(float px, float py, float radius, float power) {
     m_ang = atan2f(dy, dx) + frand(-0.35f, 0.35f);
     m_state = BState::Flee;
     m_stateT = 0;
-    m_speed = (150.0f + 140.0f * power) * StageSpeed(m_stage) * frand(0.8f, 1.25f);
+    m_speed = (150.0f + 140.0f * power) * StageSpeed(m_stage) * frand(0.8f, 1.25f)
+              * (g_cfg.fleeSpeed * 0.01f);
     m_resting = false;
 }
 
@@ -524,7 +525,7 @@ void Bug::Update(float dt, const RECT& bounds) {
             m_ang = atan2f(dy, dx) + frand(-0.3f, 0.3f);
             m_state = BState::Flee;
             m_stateT = 0;
-            m_speed = frand(210.0f, 300.0f) * spdFactor;
+            m_speed = frand(210.0f, 300.0f) * spdFactor * (g_cfg.fleeSpeed * 0.01f);
             m_resting = false;
         }
     }
