@@ -1,0 +1,21 @@
+# ---- build output -------------------------------------------------------
+/build/
+/bin/
+*.o
+*.obj
+*.res
+*.exe
+
+# ---- editor / OS --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+
+# ---- local runtime data -------------------------------------------------
+# config.ini / eaten.tsv / roachpet.log live in %APPDATA%\RoachPet and must
+# never be committed, but guard against copies dropped next to the binary
+config.ini
+eaten.tsv
+*.log

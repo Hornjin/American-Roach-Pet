@@ -1,0 +1,11 @@
+# normalise line endings so the tree works on Windows and POSIX alike
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.bat   text eol=crlf
+*.rc    text eol=crlf
+*.manifest text eol=crlf
+
+*.png   binary
+*.ico   binary
+*.exe   binary
