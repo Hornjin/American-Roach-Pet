@@ -38,7 +38,7 @@ enum {
     IDC_FPS = 1001, IDC_IDLE, IDC_MAXBUG, IDC_SCALE, IDC_OPACITY, IDC_DEBUGBG,
     IDC_LANG, IDC_TRAY, IDC_THROUGH, IDC_HOVER, IDC_EAT, IDC_POOP, IDC_FULLSCR,
     IDC_AUTOSTART, IDC_MONITOR, IDC_BOUNDS, IDC_HIDDENCNT, IDC_RESTORE,
-    IDC_OPENLOG, IDC_OPENCFG, IDC_CHECKUPD, IDC_REPO, IDC_ABOUT2,
+    IDC_OPENLOG, IDC_OPENCFG, IDC_ABOUT2,
     IDC_OK, IDC_CANCEL, IDC_APPLY, IDC_PAUSE, IDC_LOGBTN, IDC_STARVE,
     IDC_HIDEONAPP, IDC_FLEESPD, IDC_FLEESPDLBL,
     IDC_HK_TOGGLE, IDC_HK_SETTINGS, IDC_HK_QUIT
@@ -46,8 +46,8 @@ enum {
 
 static HWND hFps, hIdle, hMaxBug, hScale, hOpacity, hDebugBg, hLang, hTray,
             hThrough, hHover, hEat, hPoop, hFullscr, hAutostart, hMonitor,
-            hBounds, hHiddenCnt, hRestore, hOpenLog, hOpenCfg, hCheckUpd,
-            hRepo, hAbout2, hOK, hCancel, hApply, hPause, hLogBtn, hStarve,
+            hBounds, hHiddenCnt, hRestore, hOpenLog, hOpenCfg,
+            hAbout2, hOK, hCancel, hApply, hPause, hLogBtn, hStarve,
             hHideOnApp, hFleeSpd;
 static HFONT g_uiFont = nullptr;
 static HFONT g_boldFont = nullptr;
@@ -445,50 +445,29 @@ void AppShowAbout() {
     }
     auto S = [s](int v) { return (int)(v * s + 0.5f); };
 
-    HFONT fBody  = UiFont(9, false);
-    HFONT fTitle = UiFont(11, true);
+    HFONT fBody = UiFont(9, false);
 
     const int pad = S(20);
     const int cw  = S(470) - pad * 2;
 
-    // Measure the body text so the Chinese and English builds both fit exactly
-    // (the English paragraph wraps to more lines than the Chinese one).
-    int bodyH;
-    {
-        HDC dc = GetDC(nullptr);
-        HGDIOBJ old = SelectObject(dc, fTitle);
-        RECT mr = { 0, 0, cw, 0 };
-        DrawTextW(dc, T(S_ABOUT_TEXT), -1, &mr,
-                  DT_LEFT | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
-        SelectObject(dc, old);
-        ReleaseDC(nullptr, dc);
-        bodyH = mr.bottom + S(6);
-        if (bodyH < S(48)) bodyH = S(48);
-    }
-
-    const int bodyY = S(16);
-    const int linkY = bodyY + bodyH + S(12);
+    // the about box carries exactly one thing: the repository address
+    const int linkY = S(18);
     const int linkH = S(22);
-    const int btnY  = linkY + linkH + S(16);
+    const int btnY  = linkY + linkH + S(18);
     const int btnH  = S(28);
     const int winH  = btnY + btnH + S(16);
 
+    std::wstring title = std::wstring(T(S_APPNAME)) + L" v1.1.2";
     RECT rc = { 0, 0, S(470), winH };
     AdjustWindowRectEx(&rc, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     int ww = rc.right - rc.left, wh = rc.bottom - rc.top;
     int wx = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
     int wy = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
 
-    g_aboutWnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"RoachPetAbout", T(S_ABOUT),
+    g_aboutWnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"RoachPetAbout", title.c_str(),
                                  WS_POPUP | WS_CAPTION | WS_SYSMENU,
                                  wx, wy, ww, wh, g_setWnd, nullptr, g_hInst, nullptr);
     if (!g_aboutWnd) return;
-
-    // --- version + the one paragraph worth reading
-    HWND t = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
-                             pad, bodyY, cw, bodyH, g_aboutWnd, nullptr, g_hInst, nullptr);
-    SendMessageW(t, WM_SETFONT, (WPARAM)fTitle, TRUE);
-    SetWindowTextW(t, T(S_ABOUT_TEXT));
 
     // --- repository link (SysLink: clickable, keyboard reachable)
     HWND link = CreateWindowExW(0, L"SysLink", T(S_ABOUT_LINK),
@@ -506,19 +485,6 @@ void AppShowAbout() {
     ShowWindow(g_aboutWnd, SW_SHOW);
     SetForegroundWindow(g_aboutWnd);
     if (ok) SetFocus(ok);
-}
-
-void AppCheckUpdate() {
-    std::wstring u = AppDataDir() + L"\\update_url.txt";
-    if (GetFileAttributesW(u.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        ShellExecuteW(nullptr, L"open", u.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        return;
-    }
-    MessageBoxW(g_setWnd ? g_setWnd : g_msgWnd,
-                L"v1.1.1\n\n当前为本地构建，未配置远程更新源。\n如需启用，请在配置目录放置 update_url.txt。\n\n"
-                L"v1.1.1\n\nLocal build, no remote update source configured.\n"
-                L"Drop an update_url.txt into the config folder to enable it.",
-                T(S_CHECKUPD), MB_OK | MB_ICONINFORMATION);
 }
 
 void AppRestoreFiles() {
@@ -818,15 +784,6 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         if (id == IDC_OPENLOG)  { OpenFolderOf(AppDataDir()); return 0; }
         if (id == IDC_LOGBTN)   { ShellExecuteW(nullptr, L"open", LogPath().c_str(), nullptr, nullptr, SW_SHOWNORMAL); return 0; }
         if (id == IDC_OPENCFG)  { ShellExecuteW(nullptr, L"open", ConfigPath().c_str(), nullptr, nullptr, SW_SHOWNORMAL); return 0; }
-        if (id == IDC_CHECKUPD) { AppCheckUpdate(); return 0; }
-        if (id == IDC_REPO) {
-            wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
-            std::wstring dir = exe;
-            size_t p = dir.find_last_of(L"\\/");
-            if (p != std::wstring::npos) dir = dir.substr(0, p);
-            OpenFolderOf(dir);
-            return 0;
-        }
         if (id == IDC_ABOUT2)   { AppShowAbout(); return 0; }
         break;
     }
@@ -1067,10 +1024,8 @@ static void BuildSettingsUI() {
 
     // ---------- 其它 ----------
     section(T(S_SEC_MISC), y); y += 24;
-    hCheckUpd = Mk(L"BUTTON", T(S_CHECKUPD), BS_OWNERDRAW | WS_TABSTOP, C1, y, 110, 26, IDC_CHECKUPD);
-    hLogBtn   = Mk(L"BUTTON", T(S_OPENLOGFILE), BS_OWNERDRAW | WS_TABSTOP, C1 + 116, y, 110, 26, IDC_LOGBTN);
-    hRepo     = Mk(L"BUTTON", T(S_REPO), BS_OWNERDRAW | WS_TABSTOP, C1 + 232, y, 110, 26, IDC_REPO);
-    hAbout2   = Mk(L"BUTTON", T(S_ABOUT), BS_OWNERDRAW | WS_TABSTOP, C1 + 348, y, 110, 26, IDC_ABOUT2);
+    hLogBtn   = Mk(L"BUTTON", T(S_OPENLOGFILE), BS_OWNERDRAW | WS_TABSTOP, C1, y, 110, 26, IDC_LOGBTN);
+    hAbout2   = Mk(L"BUTTON", T(S_ABOUT), BS_OWNERDRAW | WS_TABSTOP, C1 + 116, y, 110, 26, IDC_ABOUT2);
     y += 34;
 
     // ---------- 底部按钮 ----------
@@ -1448,7 +1403,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // make sure the config dir + log exist
     AppDataDir();
-    LogLine(L"---- start v1.1.1 ----");
+    LogLine(L"---- start v1.1.2 ----");
 
     int rc = RunApp();
     (void)0;

@@ -54,8 +54,6 @@ static const LStr kStr[] = {
 /*S_OPENLOG*/        { L"打开记录", L"Open log" },
 /*S_OPENCELL*/       { L"打开所在文件夹", L"Open folder" },
 /*S_OPENCFG*/        { L"打开配置", L"Open config" },
-/*S_CHECKUPD*/       { L"检查更新", L"Check update" },
-/*S_REPO*/           { L"仓库", L"Repository" },
 /*S_ABOUT*/          { L"关于", L"About" },
 /*S_BTNOK*/             { L"确定", L"OK" },
 /*S_BTNCANCEL*/         { L"取消", L"Cancel" },
@@ -63,17 +61,10 @@ static const LStr kStr[] = {
 /*S_CLOSE*/          { L"关闭", L"Close" },
 /*S_LANG_ZH*/        { L"简体中文", L"简体中文" },
 /*S_LANG_EN*/        { L"English", L"English" },
-/*S_ALREADY_LATEST*/ { L"当前已是最新版本 v1.1.1", L"You are on the latest version v1.1.1" },
 /*S_RESTORE_OK*/     { L"已还原 %d 个文件。", L"%d file(s) restored." },
 /*S_RESTORE_NONE*/   { L"没有被隐藏的文件。", L"No hidden files." },
 /*S_RESTORE_CONFIRM*/{ L"将把本程序隐藏的所有文件恢复为正常属性（attrib -s -h）。\n是否继续？",
                        L"Restore the normal attributes of every file hidden by this app?\nContinue?" },
-/*S_ABOUT_TEXT*/     { L"美洲大蠊桌宠 v1.1.1\n\n"
-                         L"啃食文件仅通过设置 隐藏+系统 属性实现（等同 attrib +s +h），\n"
-                         L"不移动、不删除、不改内容，可随时一键还原。",
-                       L"American Roach Pet v1.1.1\n\n"
-                         L"Eating a file only sets the Hidden+System attributes (same as\n"
-                         L"attrib +s +h). Nothing is moved, deleted or modified." },
 /*S_HK_TIP*/         { L"显示/隐藏 Ctrl+Alt+R    设置 Ctrl+Alt+S    退出 Ctrl+Alt+Q",
                        L"Show/Hide Ctrl+Alt+R    Settings Ctrl+Alt+S    Quit Ctrl+Alt+Q" },
 /*S_NEED_ADMIN*/     { L"需要管理员权限才能隐藏该文件。", L"Administrator rights required." },

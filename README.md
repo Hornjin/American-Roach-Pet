@@ -8,7 +8,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 版本 | v1.1.1 |
+| 版本 | v1.1.2 |
 | 平台 | Windows 7 SP1 及以上（x64，PerMonitorV2 DPI 感知） |
 | 产物 | `bin/RoachPet.exe`，约 341 KB |
 | 代码 | 7 个源文件，约 3400 行 C++17 |
@@ -94,20 +94,6 @@ attrib +s +h "D:\path\to\file.lnk"
 | 托盘菜单 → 还原被吃掉的文档 | 带确认框 |
 | 设置 → 文件（可逆）→ 还原全部 | 显示当前隐藏数量 |
 | `RoachPet.exe --restore` | 不开 UI，适合程序崩溃后使用 |
-
-### 桌面层遮挡
-
-早期版本里蟑螂窗口是 `WS_EX_TOPMOST` 的，打开记事本会看到触须浮在窗口之上。现在每只蟑螂在呈现前都会做一次遮挡判定：
-
-1. 每 180 ms 用 `EnumWindows` 收集所有覆盖桌面的窗口矩形；
-2. 过滤掉系统类（`Progman` / `WorkerW` / `SHELLDLL_DefView` / `SysListView32` / 任务栏）、`DwmGetWindowAttribute(DWMWA_CLOAKED)` 报出的幽灵 UWP、`WS_EX_TRANSPARENT`、全透明分层窗口、最小化与零尺寸窗口；
-   另外还跳过**壳层浮层**（`XamlExplorerHostIslandWindow` 等 XAML island、以及无标题且不可激活的工具窗口）——拖动窗口时 Windows 会拉起一个铺满全屏的贴靠预览浮层，若把它当成遮挡物，整群蟑螂会在拖动期间全部消失，看起来就是「卡住了」；
-3. 把精灵矩形和这批矩形求交：
-   - **完全被盖住** → `ShowWindow(SW_HIDE)`，一个像素都不画；
-   - **部分遮挡** → 对每个相交矩形做 GDI+ `SetClip(CombineModeExclude)`，蟑螂像从窗口边缘后面钻出来，绝不覆盖窗口内容；
-4. 多个窗口各盖一角、合起来盖满时，额外采样精灵四角 + 中心 5 个点判定，避免出现整张全透明贴图的中间态。
-
-粪便层使用同一套裁切逻辑。设置里可关闭（`hide_on_app=0`），关掉后恢复成常驻桌面。
 
 ---
 

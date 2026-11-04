@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| Version | v1.1.1 |
+| Version | v1.1.2 |
 | Platform | Windows 7 SP1 or later (x64, PerMonitorV2 DPI aware) |
 | Binary | `bin/RoachPet.exe`, ~341 KB |
 | Code | 7 source files, ~3,400 lines of C++17 |
@@ -94,19 +94,6 @@ Restoring is the equivalent of `attrib -s -h`; the original attributes are repla
 | Tray menu → Restore eaten files… | Asks for confirmation |
 | Settings → Files (reversible) → Restore all | Shows the current hidden count |
 | `RoachPet.exe --restore` | No UI — the option to use after a crash |
-
-### Desktop-layer occlusion
-
-In earlier builds the roach windows were `WS_EX_TOPMOST`, so opening Notepad left antennae floating on top of it. Every insect now runs an occlusion test before it is presented:
-
-1. Every 180 ms, `EnumWindows` collects the rectangles of all windows covering the desktop;
-2. System classes (`Progman` / `WorkerW` / `SHELLDLL_DefView` / `SysListView32` / the taskbar), ghost UWP windows reported by `DwmGetWindowAttribute(DWMWA_CLOAKED)`, `WS_EX_TRANSPARENT` windows, fully transparent layered windows, minimised windows and zero-sized windows are filtered out. So are **shell overlays** (`XamlExplorerHostIslandWindow` and other XAML islands, plus untitled non-activatable tool windows) — dragging a window makes Windows raise a full-screen snap preview, and treating it as an occluder made the whole colony vanish for the duration of the drag, which looked exactly like a freeze;
-3. The sprite rectangle is intersected with that set:
-   - **fully covered** → `ShowWindow(SW_HIDE)`, not a single pixel is drawn;
-   - **partially covered** → each intersecting rectangle is excluded via GDI+ `SetClip(CombineModeExclude)`, so a roach appears to crawl out from behind the window edge and never covers window content;
-4. When several windows each cover a corner and together cover everything, five sample points (four corners + centre) decide the case, avoiding the in-between state where the whole sprite would composite to fully transparent.
-
-The frass layer uses the same clipping. The behaviour can be switched off (`hide_on_app=0`), which returns the insects to a permanently on-top desktop pet.
 
 ---
 
