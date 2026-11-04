@@ -90,8 +90,13 @@ static const LStr kStr[] = {
                        L"GitHub repository: <a href=\"https://github.com/HuangJHong/American-Roach-Pet\">"
                        L"HuangJHong/American-Roach-Pet</a>" },
 /*S_FLEESPD*/        { L"逃窜速度", L"Flee speed" },
-/*S_FLEESPD_TIP*/    { L"受惊冲刺的快慢，上限为默认的 3 倍",
-                       L"Sprint speed when startled, up to 3\u00d7 default" },
+/*S_FLEESPD_TIP*/    { L"受惊冲刺的快慢，上限为默认的 3 倍（50\u2013300）",
+                       L"Sprint speed when startled; 50 to 300" },
+/*S_HK_TOGGLE*/      { L"显示 / 隐藏", L"Show / hide" },
+/*S_HK_SETTINGS*/    { L"打开设置", L"Open settings" },
+/*S_HK_QUIT*/        { L"退出程序", L"Quit" },
+/*S_FPS_SYNC*/       { L"跟随显示器", L"Monitor" },
+/*S_HK_PRESS*/       { L"请按下新的组合键…", L"Press a new key combination..." },
 };
 
 const wchar_t* T(int id) {
@@ -189,7 +194,7 @@ void ConfigLoad() {
     if (g_cfg.fps < 5)       g_cfg.fps = 5;
     if (g_cfg.fps > 60)      g_cfg.fps = 60;
     if (g_cfg.maxBugs < 3)   g_cfg.maxBugs = 3;
-    if (g_cfg.maxBugs > 80)  g_cfg.maxBugs = 80;
+    if (g_cfg.maxBugs > 1000) g_cfg.maxBugs = 1000;
     if (g_cfg.scale < 0.6f)  g_cfg.scale = 0.6f;
     if (g_cfg.scale > 1.8f)  g_cfg.scale = 1.8f;
 

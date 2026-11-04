@@ -40,14 +40,15 @@ enum {
     IDC_AUTOSTART, IDC_MONITOR, IDC_BOUNDS, IDC_HIDDENCNT, IDC_RESTORE,
     IDC_OPENLOG, IDC_OPENCFG, IDC_CHECKUPD, IDC_REPO, IDC_ABOUT2,
     IDC_OK, IDC_CANCEL, IDC_APPLY, IDC_OPACITYLBL, IDC_PAUSE, IDC_LOGBTN,
-    IDC_HIDEONAPP, IDC_FLEESPD, IDC_FLEESPDLBL
+    IDC_HIDEONAPP, IDC_FLEESPD, IDC_FLEESPDLBL,
+    IDC_HK_TOGGLE, IDC_HK_SETTINGS, IDC_HK_QUIT
 };
 
 static HWND hFps, hIdle, hMaxBug, hScale, hOpacity, hDebugBg, hLang, hTray,
             hThrough, hHover, hEat, hPoop, hFullscr, hAutostart, hMonitor,
             hBounds, hHiddenCnt, hRestore, hOpenLog, hOpenCfg, hCheckUpd,
             hRepo, hAbout2, hOK, hCancel, hApply, hOpacityLbl, hPause, hLogBtn,
-            hHideOnApp, hFleeSpd, hFleeSpdLbl;
+            hHideOnApp, hFleeSpd;
 static HFONT g_uiFont = nullptr;
 static HFONT g_boldFont = nullptr;
 static HFONT g_smallFont = nullptr;
@@ -78,10 +79,67 @@ static const COLORREF kFieldEdge = RGB(0xD5, 0xCA, 0xBD);   // control borders
 static const COLORREF kBtnEdge   = RGB(0xD5, 0xCA, 0xBD);   // secondary buttons
 static const COLORREF kBtnHot    = RGB(0xF6, 0xF1, 0xE9);   // secondary buttons, hot
 
+// ---- custom hotkeys: click a row, then press the combination ----
+struct HkRow { HWND btn = nullptr; UINT mod = 0, key = 0; bool changed = false; int which = 0; };
+static HkRow g_hkRows[3];
+static HWND  g_hkCapture = nullptr;      // button waiting for a new combination
+
+static void HkText(UINT mod, UINT key, wchar_t* buf, size_t cch) {
+    if (!key) { swprintf(buf, cch, L"%ls", T(S_HK_PRESS)); return; }
+    wchar_t name[64] = L"?";
+    UINT sc = MapVirtualKeyW(key, MAPVK_VK_TO_VSC);
+    if (sc) {
+        LONG lsc = (LONG)sc << 16;
+        if ((key >= 0x21 && key <= 0x28) || key == 0x2D || key == 0x2E) lsc |= 0x1000000;
+        GetKeyNameTextW(lsc, name, 64);
+    }
+    wchar_t out[200] = L"";
+    if (mod & MOD_CONTROL) wcscat(out, L"Ctrl + ");
+    if (mod & MOD_SHIFT)   wcscat(out, L"Shift + ");
+    if (mod & MOD_ALT)     wcscat(out, L"Alt + ");
+    wcscat(out, name);
+    swprintf(buf, cch, L"%ls", out);
+}
+
+static void HkScanCapture(HWND h) {
+    if (!g_hkCapture) return;
+    UINT mod = 0;
+    if (GetAsyncKeyState(VK_CONTROL) & 0x8000) mod |= MOD_CONTROL;
+    if (GetAsyncKeyState(VK_SHIFT)   & 0x8000) mod |= MOD_SHIFT;
+    if (GetAsyncKeyState(VK_MENU)    & 0x8000) mod |= MOD_ALT;
+    // Escape without modifiers cancels
+    if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) && !mod) {
+        g_hkCapture = nullptr;
+        KillTimer(h, 2);
+        return;
+    }
+    for (UINT vk = 0x08; vk <= 0xFE; vk++) {
+        if (vk == VK_ESCAPE || vk == VK_CONTROL || vk == VK_SHIFT || vk == VK_MENU ||
+            vk == VK_LWIN || vk == VK_RWIN || vk == VK_LCONTROL || vk == VK_RCONTROL ||
+            vk == VK_LSHIFT || vk == VK_RSHIFT || vk == VK_LMENU || vk == VK_RMENU ||
+            vk == VK_PACKET) continue;
+        if (GetAsyncKeyState((int)vk) & 0x8000) {
+            for (auto& r : g_hkRows) {
+                if (r.btn == g_hkCapture) {
+                    r.mod = mod; r.key = vk; r.changed = true;
+                    wchar_t buf[200]; HkText(mod, vk, buf, 200);
+                    SetWindowTextW(r.btn, buf);
+                    InvalidateRect(r.btn, nullptr, TRUE);
+                }
+            }
+            g_hkCapture = nullptr;
+            KillTimer(h, 2);
+            return;
+        }
+    }
+}
+
 struct SetSection { const wchar_t* title; int titleY; int ruleY; };
 static std::vector<SetSection> g_secs;
 static std::vector<HWND>       g_chks;      // owner-drawn checkboxes
 static int    g_cardTop = 0, g_cardBot = 0;
+static int    g_scrollPos = 0;      // settings sheet vertical scroll
+static int    g_contentH = 0;       // full sheet height in logical px
 static HBRUSH g_brCard = nullptr, g_brDesk = nullptr;
 
 static bool IsOwnerCheck(HWND h) {
@@ -535,15 +593,19 @@ static void ComboSet(HWND h, int i) { SendMessageW(h, CB_SETCURSEL, i, 0); }
 static void FillFpsCombo(HWND h) {
     const wchar_t* items[] = { L"10", L"15", L"24", L"30", L"45", L"60" };
     for (auto* s : items) SendMessageW(h, CB_ADDSTRING, 0, (LPARAM)s);
+    // the last entry means "follow the monitor refresh rate"
+    SendMessageW(h, CB_INSERTSTRING, 6, (LPARAM)T(S_FPS_SYNC));
 }
 static int FpsToIndex(int fps) {
     const int v[] = { 10, 15, 24, 30, 45, 60 };
+    if (fps == 0) return 6;
     int best = 2;
     for (int i = 0; i < 6; i++) if (v[i] == fps) best = i;
     return best;
 }
 static int IndexToFps(int i) {
     const int v[] = { 10, 15, 24, 30, 45, 60 };
+    if (i == 6) return 0;               // 0 = follow the monitor
     if (i < 0 || i > 5) return 24;
     return v[i];
 }
@@ -581,7 +643,9 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         GetClientRect(h, &rc);
 
         HDC     mem = CreateCompatibleDC(dc);
-        HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
+        int contentPx = Sc(g_contentH);
+        if (contentPx < rc.bottom) contentPx = rc.bottom;
+        HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, contentPx);
         HGDIOBJ ob  = SelectObject(mem, bmp);
 
         FillRectC(mem, rc, kDesk);
@@ -615,7 +679,7 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             FillRectC(mem, rl, kCardEdge);
         }
 
-        BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+        BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, g_scrollPos, SRCCOPY);
         SelectObject(mem, ob);
         DeleteObject(bmp);
         DeleteDC(mem);
@@ -668,16 +732,17 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         if (code == BN_CLICKED && IsOwnerCheck(ctl)) {
             SetCheck(ctl, !GetCheck(ctl));
         }
+        if (code == BN_CLICKED && (id == IDC_HK_TOGGLE || id == IDC_HK_SETTINGS || id == IDC_HK_QUIT)) {
+            g_hkCapture = ctl;
+            SetWindowTextW(ctl, T(S_HK_PRESS));
+            InvalidateRect(ctl, nullptr, TRUE);
+            SetTimer(h, 2, 25, nullptr);
+            return 0;
+        }
         if (id == IDC_OPACITY && code == 0) {
             int v = (int)SendMessageW(hOpacity, TBM_GETPOS, 0, 0);
             wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
             SetWindowTextW(hOpacityLbl, b);
-            return 0;
-        }
-        if (id == IDC_FLEESPD && code == 0) {
-            int v = (int)SendMessageW(hFleeSpd, TBM_GETPOS, 0, 0);
-            wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
-            SetWindowTextW(hFleeSpdLbl, b);
             return 0;
         }
         if (id == IDC_OK || id == IDC_APPLY) {
@@ -690,7 +755,7 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             g_cfg.idleThrottle = GetCheck(hIdle);
             g_cfg.maxBugs      = GetDlgItemInt(h, IDC_MAXBUG, nullptr, FALSE);
             if (g_cfg.maxBugs < 3)  g_cfg.maxBugs = 3;
-            if (g_cfg.maxBugs > 80) g_cfg.maxBugs = 80;
+            if (g_cfg.maxBugs > 1000) g_cfg.maxBugs = 1000;
             SetDlgItemInt(h, IDC_MAXBUG, g_cfg.maxBugs, FALSE);
 
             const float scales[] = { 0.7f, 0.85f, 1.0f, 1.2f, 1.45f, 1.7f };
@@ -706,7 +771,17 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             g_cfg.eatEnabled  = GetCheck(hEat);
             g_cfg.poopEnabled = GetCheck(hPoop);
             g_cfg.hideOnApp   = GetCheck(hHideOnApp);
-            g_cfg.fleeSpeed   = (int)SendMessageW(hFleeSpd, TBM_GETPOS, 0, 0);
+            for (const auto& r : g_hkRows) {
+                if (!r.changed) continue;
+                UINT* mods[3] = { &g_cfg.hkToggleMod,   &g_cfg.hkSettingsMod,   &g_cfg.hkQuitMod };
+                UINT* keys[3] = { &g_cfg.hkToggleKey,   &g_cfg.hkSettingsKey,   &g_cfg.hkQuitKey };
+                *mods[r.which] = r.mod;
+                *keys[r.which] = r.key;
+            }
+            g_cfg.fleeSpeed   = GetDlgItemInt(h, IDC_FLEESPD, nullptr, FALSE);
+            if (g_cfg.fleeSpeed < 50)  g_cfg.fleeSpeed = 50;
+            if (g_cfg.fleeSpeed > 300) g_cfg.fleeSpeed = 300;
+            SetDlgItemInt(h, IDC_FLEESPD, g_cfg.fleeSpeed, FALSE);
             g_cfg.hideFullscreen = GetCheck(hFullscr);
             g_cfg.autostart   = GetCheck(hAutostart);
             g_cfg.monitor     = ComboSel(hMonitor);
@@ -767,13 +842,44 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         if (id == IDC_ABOUT2)   { AppShowAbout(); return 0; }
         break;
     }
+    case WM_TIMER:
+        if (w == 2) HkScanCapture(h);
+        return 0;
+
+    case WM_VSCROLL: {
+        SCROLLINFO si = { sizeof(si), SIF_ALL };
+        GetScrollInfo(h, SB_VERT, &si);
+        int old = si.nPos;
+        switch (LOWORD(w)) {
+        case SB_TOP:      si.nPos = si.nMin; break;
+        case SB_BOTTOM:   si.nPos = si.nMax; break;
+        case SB_LINEUP:   si.nPos -= Sc(40); break;
+        case SB_LINEDOWN: si.nPos += Sc(40); break;
+        case SB_PAGEUP:   si.nPos -= (int)si.nPage; break;
+        case SB_PAGEDOWN: si.nPos += (int)si.nPage; break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION: si.nPos = si.nTrackPos; break;
+        }
+        si.fMask = SIF_POS;
+        SetScrollInfo(h, SB_VERT, &si, TRUE);
+        GetScrollInfo(h, SB_VERT, &si);
+        int dy = old - si.nPos;
+        if (dy) ScrollWindowEx(h, 0, dy, nullptr, nullptr, nullptr, nullptr,
+                               SW_SCROLLCHILDREN | SW_INVALIDATE);
+        return 0;
+    }
+    case WM_MOUSEWHEEL: {
+        int d = GET_WHEEL_DELTA_WPARAM(w);
+        while (d >= WHEEL_DELTA)  { SendMessageW(h, WM_VSCROLL, SB_LINEDOWN, 0); d -= WHEEL_DELTA; }
+        while (d <= -WHEEL_DELTA) { SendMessageW(h, WM_VSCROLL, SB_LINEUP, 0);   d += WHEEL_DELTA; }
+        return 0;
+    }
     case WM_HSCROLL: {
-        // trackbars report through WM_HSCROLL; keep both % labels live
-        HWND ctl = (HWND)l;
-        if (ctl == hOpacity || ctl == hFleeSpd) {
-            int v = (int)SendMessageW(ctl, TBM_GETPOS, 0, 0);
+        // the opacity trackbar reports through WM_HSCROLL; keep its % label live
+        if ((HWND)l == hOpacity) {
+            int v = (int)SendMessageW(hOpacity, TBM_GETPOS, 0, 0);
             wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
-            SetWindowTextW(ctl == hOpacity ? hOpacityLbl : hFleeSpdLbl, b);
+            SetWindowTextW(hOpacityLbl, b);
         }
         break;
     }
@@ -782,6 +888,8 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         BugSetTopmost(true);
         return 0;
     case WM_DESTROY:
+        KillTimer(h, 2);
+        g_hkCapture = nullptr;
         g_setWnd = nullptr;
         BugSetTopmost(true);
         return 0;
@@ -800,7 +908,7 @@ static void BuildSettingsUI() {
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
         wc.hbrBackground = nullptr;    // WM_PAINT paints the desk
         wc.lpszClassName = L"RoachPetSettings";
-        wc.hIcon = g_trayIcon ? g_trayIcon : LoadIcon(nullptr, IDI_APPLICATION);
+        wc.hIcon = LoadIconW(g_hInst, MAKEINTRESOURCEW(1));
         RegisterClassExW(&wc);
         clsReg = true;
     }
@@ -879,17 +987,17 @@ static void BuildSettingsUI() {
     lbl(T(S_MAXBUG), C1, y, L1 - C1 - 4);
     hMaxBug = Mk(L"EDIT", L"", ES_NUMBER | WS_BORDER | WS_TABSTOP, L1, y, 56, 22, IDC_MAXBUG);
     SetWindowTextW(hMaxBug, std::to_wstring(g_cfg.maxBugs).c_str());
-    SendMessageW(hMaxBug, EM_SETLIMITTEXT, 2, 0);
+    SendMessageW(hMaxBug, EM_SETLIMITTEXT, 4, 0);
     {
         HWND sp = CreateWindowExW(0, UPDOWN_CLASSW, L"", WS_CHILD | WS_VISIBLE | UDS_SETBUDDYINT |
                                   UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS,
                                   L1, y, 20, 22, g_setWnd, (HMENU)(INT_PTR)(IDC_MAXBUG + 100), g_hInst, nullptr);
         SendMessageW(sp, UDM_SETBUDDY, (WPARAM)hMaxBug, 0);
-        SendMessageW(sp, UDM_SETRANGE32, 3, 80);
+        SendMessageW(sp, UDM_SETRANGE32, 3, 1000);
     }
     hPause = chk(T(S_PAUSE), C2, y, IDC_PAUSE);
     SetCheck(hPause, g_paused);
-    y += 34;
+    y += 44;
 
     // ---------- 外观 ----------
     section(T(S_SEC_LOOK), y); y += 24;
@@ -923,7 +1031,7 @@ static void BuildSettingsUI() {
     SendMessageW(hLang, CB_ADDSTRING, 0, (LPARAM)T(S_LANG_ZH));
     SendMessageW(hLang, CB_ADDSTRING, 0, (LPARAM)T(S_LANG_EN));
     ComboSet(hLang, g_cfg.lang);
-    y += 34;
+    y += 44;
 
     // ---------- 行为 ----------
     section(T(S_SEC_BEHAVE), y); y += 24;
@@ -947,16 +1055,12 @@ static void BuildSettingsUI() {
     hint(T(S_HIDEONAPP_TIP), C2, y + 3, 626 - C2);
     y += 28;
     lbl(T(S_FLEESPD), C1, y, L1 - C1 - 4);
-    hFleeSpd = Mk(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS, L1, y, W1, 24, IDC_FLEESPD);
-    SendMessageW(hFleeSpd, TBM_SETRANGE, TRUE, MAKELONG(50, 300));
-    SendMessageW(hFleeSpd, TBM_SETPOS, TRUE, g_cfg.fleeSpeed);
-    hFleeSpdLbl = Mk(L"STATIC", L"", SS_LEFT, L1 + W1 + 6, y + 5, 44, 18, IDC_FLEESPDLBL);
-    {
-        wchar_t b[32]; swprintf(b, 32, L"%d%%", g_cfg.fleeSpeed);
-        SetWindowTextW(hFleeSpdLbl, b);
-    }
+    // a trackbar dragged badly on the self-drawn card, so the value is typed
+    hFleeSpd = Mk(L"EDIT", L"", ES_NUMBER | WS_BORDER | WS_TABSTOP, L1, y, 56, 22, IDC_FLEESPD);
+    SetWindowTextW(hFleeSpd, std::to_wstring(g_cfg.fleeSpeed).c_str());
+    SendMessageW(hFleeSpd, EM_SETLIMITTEXT, 3, 0);
     hint(T(S_FLEESPD_TIP), C2, y + 3, 626 - C2);
-    y += 34;
+    y += 44;
 
     // ---------- 显示 ----------
     section(T(S_SEC_DISPLAY), y); y += 24;
@@ -976,7 +1080,7 @@ static void BuildSettingsUI() {
     SendMessageW(hBounds, CB_ADDSTRING, 0, (LPARAM)T(S_BOUND_WORK));
     SendMessageW(hBounds, CB_ADDSTRING, 0, (LPARAM)T(S_BOUND_FULL));
     ComboSet(hBounds, g_cfg.boundsMode ? 1 : 0);
-    y += 34;
+    y += 44;
 
     // ---------- 文件 ----------
     section(T(S_SEC_FILE), y); y += 24;
@@ -994,8 +1098,21 @@ static void BuildSettingsUI() {
 
     // ---------- 快捷键 ----------
     section(T(S_SEC_HOTKEY), y); y += 24;
-    Mk(L"STATIC", T(S_HK_TIP), SS_LEFT, C1, y, 626 - C1, 18, 0);
-    y += 34;
+    // three capture buttons: click one, then press the combination you want
+    for (auto& r : g_hkRows) r = HkRow{};
+    int hkIdx = 0;
+    auto hkRow = [&](const wchar_t* label, int id, int which, UINT mod, UINT key) {
+        lbl(label, C1, y, L1 - C1 - 4);
+        wchar_t buf[200]; HkText(mod, key, buf, 200);
+        HWND b = Mk(L"BUTTON", buf, BS_OWNERDRAW | WS_TABSTOP, L1, y, W1, 24, id);
+        if (b) g_hkRows[hkIdx] = { b, mod, key, false, which };
+        y += 26;
+        hkIdx++;
+    };
+    hkRow(T(S_HK_TOGGLE),   IDC_HK_TOGGLE,   0, g_cfg.hkToggleMod,   (UINT)g_cfg.hkToggleKey);
+    hkRow(T(S_HK_SETTINGS), IDC_HK_SETTINGS, 1, g_cfg.hkSettingsMod, (UINT)g_cfg.hkSettingsKey);
+    hkRow(T(S_HK_QUIT),     IDC_HK_QUIT,     2, g_cfg.hkQuitMod,     (UINT)g_cfg.hkQuitKey);
+    y += 8;
 
     // ---------- 其它 ----------
     section(T(S_SEC_MISC), y); y += 24;
@@ -1003,7 +1120,7 @@ static void BuildSettingsUI() {
     hLogBtn   = Mk(L"BUTTON", T(S_OPENLOGFILE), BS_OWNERDRAW | WS_TABSTOP, C1 + 116, y, 110, 26, IDC_LOGBTN);
     hRepo     = Mk(L"BUTTON", T(S_REPO), BS_OWNERDRAW | WS_TABSTOP, C1 + 232, y, 110, 26, IDC_REPO);
     hAbout2   = Mk(L"BUTTON", T(S_ABOUT), BS_OWNERDRAW | WS_TABSTOP, C1 + 348, y, 110, 26, IDC_ABOUT2);
-    y += 34;
+    y += 44;
 
     // ---------- 底部按钮 ----------
     // the card ends here; the button row sits on the desk below a hairline
@@ -1015,24 +1132,29 @@ static void BuildSettingsUI() {
     hApply  = Mk(L"BUTTON", T(S_APPLY), BS_OWNERDRAW | WS_TABSTOP, W - 106, by, 92, 28, IDC_APPLY);
 
     // ---------- 尺寸与居中 ----------
+    // the sheet keeps its natural height; when the monitor is too short the
+    // window clips it and a vertical scrollbar takes over
+    g_contentH = clientH;
+    g_scrollPos = 0;
+
     RECT rc = { 0, 0, Sc(W), Sc(clientH) };
     AdjustWindowRectEx(&rc, kStyle, FALSE, WS_EX_TOPMOST);
-    int outW = rc.right - rc.left, outH = rc.bottom - rc.top;
+    int frameH = (rc.bottom - rc.top) - Sc(clientH);
+    int availH = (wa.bottom - wa.top) - 45;          // title bar + margin
+    int viewH = Sc(clientH);
+    if (viewH > availH) viewH = availH;
+    int outW = rc.right - rc.left, outH = viewH + frameH;
     int sx = wa.left + ((wa.right - wa.left) - outW) / 2;
     int sy = wa.top + ((wa.bottom - wa.top) - outH) / 2;
     if (sx < wa.left) sx = wa.left;
     if (sy < wa.top)  sy = wa.top;
 
-    // high-DPI screens are not always tall enough for the whole sheet: shrink
-    // the layout once instead of letting the buttons fall off the bottom
-    int availH = (wa.bottom - wa.top) - 16;
-    if (outH > availH && forcedScale <= 0.0f) {
-        forcedScale = g_uiScale * ((float)availH / (float)outH) * 0.99f;
-        DestroyWindow(g_setWnd);
-        g_setWnd = nullptr;
-        BuildSettingsUI();
-        return;
-    }
+    SCROLLINFO si = { sizeof(si), SIF_RANGE | SIF_PAGE | SIF_POS };
+    si.nMin = 0;
+    si.nMax = Sc(clientH) - 1;
+    si.nPage = (UINT)viewH;
+    si.nPos = 0;
+    SetScrollInfo(g_setWnd, SB_VERT, &si, TRUE);
     // The very first ShowWindow() in a process may be overridden by the
     // STARTUPINFO the parent passed in, so force a normal state afterwards.
     ShowWindow(g_setWnd, SW_SHOWNORMAL);
@@ -1270,6 +1392,17 @@ int RunApp() {
 
         // ---- frame pacing / idle throttling
         int target = g_cfg.fps;
+        if (target == 0) {
+            // follow the monitor refresh rate, resolved once
+            static int hz = 0;
+            if (!hz) {
+                DEVMODEW dm = { sizeof(dm) };
+                EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &dm);
+                hz = (int)dm.dmDisplayFrequency;
+                if (hz < 30) hz = 60;
+            }
+            target = hz;
+        }
         if (g_cfg.idleThrottle) {
             bool busy = false;
             for (auto* b : Bug::All()) {
@@ -1360,7 +1493,8 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR lpCmdLine, int) {
     Gdiplus::GdiplusStartup(&gdipToken, &gi, nullptr);
 
     INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_BAR_CLASSES | ICC_STANDARD_CLASSES |
-                                              ICC_UPDOWN_CLASS | ICC_LINK_CLASS };
+                                              ICC_UPDOWN_CLASS | ICC_LINK_CLASS |
+                                              ICC_HOTKEY_CLASS };
     InitCommonControlsEx(&icc);
 
     ConfigLoad();

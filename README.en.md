@@ -125,12 +125,13 @@ The Settings window is DPI-scaled, so nothing is clipped at 125% / 150%; if it w
 | Behaviour | `eat_files` | 1 | Allow eating files |
 | Behaviour | `poop` | 1 | Produce frass |
 | Behaviour | `hide_on_app` | 1 | Hide when covered by a window (float on the desktop otherwise) |
+| Behaviour | `flee_speed` | 100 | Flee speed in percent, 50–300 (cap is 3× the default) |
 | Display | `monitor` | 0 | 0 = all monitors / 1..N = a specific screen |
 | Display | `bounds` | 0 | 0 = work area (avoid the taskbar) / 1 = full monitor |
 | Display | `hide_fullscreen` | 1 | Auto-hide in fullscreen apps (games, presentations) |
-| Performance | `fps` | 24 | FPS cap 10 / 15 / 24 / 30 / 60 |
+| Performance | `fps` | 24 | FPS cap 10 / 15 / 24 / 30 / 60 / 0 = follow the monitor refresh rate |
 | Performance | `idle_throttle` | 1 | Throttle when idle |
-| Performance | `max_bugs` | 26 | Population cap 3–80 |
+| Performance | `max_bugs` | 26 | Population cap 3–1000 |
 | Performance | `low_priority` | 1 | Run at IDLE priority class |
 | Files | `eat_interval` | 40 | Minimum seconds between two meals |
 | Files | `max_hidden` | 200 | Maximum files hidden at the same time |
@@ -141,7 +142,9 @@ The initial population is derived from `max_bugs`: adults 32% (min 3), juveniles
 
 ### Hotkeys
 
-| Combination | Action |
+All three hotkeys can be redefined in Settings: click a row, then press the new combination (Esc cancels).
+
+| Default | Action |
 |---|---|
 | `Ctrl + Alt + R` | Show / hide the pet |
 | `Ctrl + Alt + S` | Open Settings |
