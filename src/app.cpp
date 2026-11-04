@@ -138,8 +138,7 @@ struct SetSection { const wchar_t* title; int titleY; int ruleY; };
 static std::vector<SetSection> g_secs;
 static std::vector<HWND>       g_chks;      // owner-drawn checkboxes
 static int    g_cardTop = 0, g_cardBot = 0;
-static int    g_scrollPos = 0;      // settings sheet vertical scroll
-static int    g_contentH = 0;       // full sheet height in logical px
+
 static HBRUSH g_brCard = nullptr, g_brDesk = nullptr;
 
 static bool IsOwnerCheck(HWND h) {
@@ -643,9 +642,7 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         GetClientRect(h, &rc);
 
         HDC     mem = CreateCompatibleDC(dc);
-        int contentPx = Sc(g_contentH);
-        if (contentPx < rc.bottom) contentPx = rc.bottom;
-        HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, contentPx);
+        HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
         HGDIOBJ ob  = SelectObject(mem, bmp);
 
         FillRectC(mem, rc, kDesk);
@@ -679,7 +676,7 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             FillRectC(mem, rl, kCardEdge);
         }
 
-        BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, g_scrollPos, SRCCOPY);
+        BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
         SelectObject(mem, ob);
         DeleteObject(bmp);
         DeleteDC(mem);
@@ -837,34 +834,6 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         if (w == 2) HkScanCapture(h);
         return 0;
 
-    case WM_VSCROLL: {
-        SCROLLINFO si = { sizeof(si), SIF_ALL };
-        GetScrollInfo(h, SB_VERT, &si);
-        int old = si.nPos;
-        switch (LOWORD(w)) {
-        case SB_TOP:      si.nPos = si.nMin; break;
-        case SB_BOTTOM:   si.nPos = si.nMax; break;
-        case SB_LINEUP:   si.nPos -= Sc(40); break;
-        case SB_LINEDOWN: si.nPos += Sc(40); break;
-        case SB_PAGEUP:   si.nPos -= (int)si.nPage; break;
-        case SB_PAGEDOWN: si.nPos += (int)si.nPage; break;
-        case SB_THUMBTRACK:
-        case SB_THUMBPOSITION: si.nPos = si.nTrackPos; break;
-        }
-        si.fMask = SIF_POS;
-        SetScrollInfo(h, SB_VERT, &si, TRUE);
-        GetScrollInfo(h, SB_VERT, &si);
-        int dy = old - si.nPos;
-        if (dy) ScrollWindowEx(h, 0, dy, nullptr, nullptr, nullptr, nullptr,
-                               SW_SCROLLCHILDREN | SW_INVALIDATE);
-        return 0;
-    }
-    case WM_MOUSEWHEEL: {
-        int d = GET_WHEEL_DELTA_WPARAM(w);
-        while (d >= WHEEL_DELTA)  { SendMessageW(h, WM_VSCROLL, SB_LINEDOWN, 0); d -= WHEEL_DELTA; }
-        while (d <= -WHEEL_DELTA) { SendMessageW(h, WM_VSCROLL, SB_LINEUP, 0);   d += WHEEL_DELTA; }
-        return 0;
-    }
     case WM_CLOSE:
         ShowWindow(h, SW_HIDE);
         BugSetTopmost(true);
@@ -979,7 +948,7 @@ static void BuildSettingsUI() {
     }
     hPause = chk(T(S_PAUSE), C2, y, IDC_PAUSE);
     SetCheck(hPause, g_paused);
-    y += 44;
+    y += 34;
 
     // ---------- 外观 ----------
     section(T(S_SEC_LOOK), y); y += 24;
@@ -1010,7 +979,7 @@ static void BuildSettingsUI() {
     SendMessageW(hLang, CB_ADDSTRING, 0, (LPARAM)T(S_LANG_ZH));
     SendMessageW(hLang, CB_ADDSTRING, 0, (LPARAM)T(S_LANG_EN));
     ComboSet(hLang, g_cfg.lang);
-    y += 44;
+    y += 34;
 
     // ---------- 行为 ----------
     section(T(S_SEC_BEHAVE), y); y += 24;
@@ -1042,7 +1011,7 @@ static void BuildSettingsUI() {
     y += 28;
     hStarve = chk(T(S_STARVE), C1, y, IDC_STARVE);
     SetCheck(hStarve, g_cfg.starveWhenNoFood);
-    y += 44;
+    y += 34;
 
     // ---------- 显示 ----------
     section(T(S_SEC_DISPLAY), y); y += 24;
@@ -1062,7 +1031,7 @@ static void BuildSettingsUI() {
     SendMessageW(hBounds, CB_ADDSTRING, 0, (LPARAM)T(S_BOUND_WORK));
     SendMessageW(hBounds, CB_ADDSTRING, 0, (LPARAM)T(S_BOUND_FULL));
     ComboSet(hBounds, g_cfg.boundsMode ? 1 : 0);
-    y += 44;
+    y += 34;
 
     // ---------- 文件 ----------
     section(T(S_SEC_FILE), y); y += 24;
@@ -1102,7 +1071,7 @@ static void BuildSettingsUI() {
     hLogBtn   = Mk(L"BUTTON", T(S_OPENLOGFILE), BS_OWNERDRAW | WS_TABSTOP, C1 + 116, y, 110, 26, IDC_LOGBTN);
     hRepo     = Mk(L"BUTTON", T(S_REPO), BS_OWNERDRAW | WS_TABSTOP, C1 + 232, y, 110, 26, IDC_REPO);
     hAbout2   = Mk(L"BUTTON", T(S_ABOUT), BS_OWNERDRAW | WS_TABSTOP, C1 + 348, y, 110, 26, IDC_ABOUT2);
-    y += 44;
+    y += 34;
 
     // ---------- 底部按钮 ----------
     // the card ends here; the button row sits on the desk below a hairline
@@ -1114,29 +1083,24 @@ static void BuildSettingsUI() {
     hApply  = Mk(L"BUTTON", T(S_APPLY), BS_OWNERDRAW | WS_TABSTOP, W - 106, by, 92, 28, IDC_APPLY);
 
     // ---------- 尺寸与居中 ----------
-    // the sheet keeps its natural height; when the monitor is too short the
-    // window clips it and a vertical scrollbar takes over
-    g_contentH = clientH;
-    g_scrollPos = 0;
-
     RECT rc = { 0, 0, Sc(W), Sc(clientH) };
     AdjustWindowRectEx(&rc, kStyle, FALSE, WS_EX_TOPMOST);
-    int frameH = (rc.bottom - rc.top) - Sc(clientH);
-    int availH = (wa.bottom - wa.top) - 45;          // title bar + margin
-    int viewH = Sc(clientH);
-    if (viewH > availH) viewH = availH;
-    int outW = rc.right - rc.left, outH = viewH + frameH;
+    int outW = rc.right - rc.left, outH = rc.bottom - rc.top;
     int sx = wa.left + ((wa.right - wa.left) - outW) / 2;
     int sy = wa.top + ((wa.bottom - wa.top) - outH) / 2;
     if (sx < wa.left) sx = wa.left;
     if (sy < wa.top)  sy = wa.top;
 
-    SCROLLINFO si = { sizeof(si), SIF_RANGE | SIF_PAGE | SIF_POS };
-    si.nMin = 0;
-    si.nMax = Sc(clientH) - 1;
-    si.nPage = (UINT)viewH;
-    si.nPos = 0;
-    SetScrollInfo(g_setWnd, SB_VERT, &si, TRUE);
+    // high-DPI screens are not always tall enough for the whole sheet: shrink
+    // the layout once instead of letting the buttons fall off the bottom
+    int availH = (wa.bottom - wa.top) - 16;
+    if (outH > availH && forcedScale <= 0.0f) {
+        forcedScale = g_uiScale * ((float)availH / (float)outH) * 0.99f;
+        DestroyWindow(g_setWnd);
+        g_setWnd = nullptr;
+        BuildSettingsUI();
+        return;
+    }
     // The very first ShowWindow() in a process may be overridden by the
     // STARTUPINFO the parent passed in, so force a normal state afterwards.
     ShowWindow(g_setWnd, SW_SHOWNORMAL);
