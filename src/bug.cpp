@@ -349,12 +349,10 @@ void Bug::Update(float dt, const RECT& bounds) {
                     b->burstOut();
                     m_alive = false;    // the ootheca is spent
                 }
-            } else {
-                m_life += dt;
-                if (m_stage == Stage::Hatchling && m_life > 55.0f) {
-                    m_stage = Stage::Juvenile; m_life = 0;
-                }
             }
+            // growing up only counts while out and about: time spent hiding
+            // under an icon or fleeing does not age a nymph, so a startled
+            // juvenile never turns adult mid-escape
             return;
         }
     }
@@ -681,6 +679,25 @@ void BugTickAll(float dt, const RECT& bounds) {
         else i++;
     }
 
+    // no food anywhere on the desktop: the colony slowly dies out (optional)
+    static float starveT = 0.0f, starveNext = 20.0f;
+    if (g_cfg.starveWhenNoFood && !v.empty()) {
+        int eatable = 0;
+        const int n = (int)g_desk.icons().size();
+        for (int i = 0; i < n; i++) if (!g_desk.PathOfIcon(i).empty()) eatable++;
+        if (eatable == 0) {
+            starveT += dt;
+            if (starveT >= starveNext) {
+                starveT = 0.0f;
+                starveNext = frand(18.0f, 35.0f);
+                v[g_rng() % v.size()]->kill();    // reaped on the next tick
+            }
+        } else {
+            starveT = 0.0f;
+            starveNext = 20.0f;
+        }
+    }
+
     // ootheca laying by adults
     static float layT = 40.0f;
     layT -= dt;
@@ -743,11 +760,12 @@ void BugSetTopmost(bool on) {
 
 void BugRestorePopulation() {
     int want = g_cfg.maxBugs;
-    // mostly grown insects out in the open, a few egg cases tucked under files
-    int adults = want * 32 / 100; if (adults < 3) adults = 3;
-    int juv    = want * 20 / 100; if (juv < 2) juv = 2;
-    int hatch  = want * 12 / 100; if (hatch < 1) hatch = 1;
-    int ooth   = want * 14 / 100; if (ooth < 2) ooth = 2;
+    // adults 30%, juveniles 50%, hatchlings 20%; oothecae sit outside the
+    // ratio - one egg case per 2-5 adults (we use one per ~3.5)
+    int adults = want * 30 / 100; if (adults < 3) adults = 3;
+    int juv    = want * 50 / 100; if (juv < 2) juv = 2;
+    int hatch  = want * 20 / 100; if (hatch < 1) hatch = 1;
+    int ooth   = adults * 2 / 7;  if (ooth < 1) ooth = 1;
 
     RECT b = g_curBounds;
     for (int i = 0; i < adults; i++) {

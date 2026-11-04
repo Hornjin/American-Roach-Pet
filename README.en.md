@@ -126,6 +126,7 @@ The Settings window is DPI-scaled, so nothing is clipped at 125% / 150%; if it w
 | Behaviour | `poop` | 1 | Produce frass |
 | Behaviour | `hide_on_app` | 1 | Hide when covered by a window (float on the desktop otherwise) |
 | Behaviour | `flee_speed` | 100 | Flee speed in percent, 50–300 (cap is 3× the default) |
+| Behaviour | `starve` | 0 | The colony dies off when no food is left (one roach every 18–35 s) |
 | Display | `monitor` | 0 | 0 = all monitors / 1..N = a specific screen |
 | Display | `bounds` | 0 | 0 = work area (avoid the taskbar) / 1 = full monitor |
 | Display | `hide_fullscreen` | 1 | Auto-hide in fullscreen apps (games, presentations) |
@@ -138,7 +139,7 @@ The Settings window is DPI-scaled, so nothing is clipped at 125% / 150%; if it w
 | Misc | `autostart` | 0 | Start with Windows (writes `HKCU\...\Run`) |
 | Misc | `click_through` | 0 | Click-through — clicks land on the desktop |
 
-The initial population is derived from `max_bugs`: adults 32% (min 3), juveniles 20% (min 2), hatchlings 12% (min 1), oothecae 14% (min 2). The rest arrives through natural breeding.
+The initial population is derived from `max_bugs`: adults 30% (min 3), juveniles 50% (min 2), hatchlings 20% (min 1). Oothecae sit outside the ratio — one per 2–5 adults, scaling with the colony. Growing up (hatchling → juvenile → adult) only counts time spent scurrying in the open; hiding under an icon or fleeing does not age a nymph.
 
 ### Hotkeys
 

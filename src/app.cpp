@@ -39,7 +39,7 @@ enum {
     IDC_LANG, IDC_TRAY, IDC_THROUGH, IDC_HOVER, IDC_EAT, IDC_POOP, IDC_FULLSCR,
     IDC_AUTOSTART, IDC_MONITOR, IDC_BOUNDS, IDC_HIDDENCNT, IDC_RESTORE,
     IDC_OPENLOG, IDC_OPENCFG, IDC_CHECKUPD, IDC_REPO, IDC_ABOUT2,
-    IDC_OK, IDC_CANCEL, IDC_APPLY, IDC_OPACITYLBL, IDC_PAUSE, IDC_LOGBTN,
+    IDC_OK, IDC_CANCEL, IDC_APPLY, IDC_PAUSE, IDC_LOGBTN, IDC_STARVE,
     IDC_HIDEONAPP, IDC_FLEESPD, IDC_FLEESPDLBL,
     IDC_HK_TOGGLE, IDC_HK_SETTINGS, IDC_HK_QUIT
 };
@@ -47,7 +47,7 @@ enum {
 static HWND hFps, hIdle, hMaxBug, hScale, hOpacity, hDebugBg, hLang, hTray,
             hThrough, hHover, hEat, hPoop, hFullscr, hAutostart, hMonitor,
             hBounds, hHiddenCnt, hRestore, hOpenLog, hOpenCfg, hCheckUpd,
-            hRepo, hAbout2, hOK, hCancel, hApply, hOpacityLbl, hPause, hLogBtn,
+            hRepo, hAbout2, hOK, hCancel, hApply, hPause, hLogBtn, hStarve,
             hHideOnApp, hFleeSpd;
 static HFONT g_uiFont = nullptr;
 static HFONT g_boldFont = nullptr;
@@ -689,15 +689,8 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
     case WM_CTLCOLORSTATIC: {
         HDC cdc = (HDC)w;
-        HWND who = (HWND)l;
         SetBkMode(cdc, TRANSPARENT);
-        if (who == hOpacityLbl) {
-            SetTextColor(cdc, kCarapace);
-        } else {
-            SetTextColor(cdc, kBody);
-        }
-        // the trackbar paints its own background from this brush
-        if (who == hOpacity) return (LRESULT)g_brCard;
+        SetTextColor(cdc, kBody);
         return (LRESULT)GetStockObject(HOLLOW_BRUSH);
     }
 
@@ -739,12 +732,6 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             SetTimer(h, 2, 25, nullptr);
             return 0;
         }
-        if (id == IDC_OPACITY && code == 0) {
-            int v = (int)SendMessageW(hOpacity, TBM_GETPOS, 0, 0);
-            wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
-            SetWindowTextW(hOpacityLbl, b);
-            return 0;
-        }
         if (id == IDC_OK || id == IDC_APPLY) {
             // ---- read back
             int oldLang = g_cfg.lang;
@@ -762,7 +749,11 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             int si = ComboSel(hScale);
             if (si >= 0 && si < 6) g_cfg.scale = scales[si];
 
-            g_cfg.opacity     = (int)SendMessageW(hOpacity, TBM_GETPOS, 0, 0);
+            g_cfg.opacity     = GetDlgItemInt(h, IDC_OPACITY, nullptr, FALSE);
+            if (g_cfg.opacity < 30)  g_cfg.opacity = 30;
+            if (g_cfg.opacity > 100) g_cfg.opacity = 100;
+            SetDlgItemInt(h, IDC_OPACITY, g_cfg.opacity, FALSE);
+            g_cfg.starveWhenNoFood = GetCheck(hStarve);
             g_cfg.debugBg     = GetCheck(hDebugBg);
             g_cfg.lang        = ComboSel(hLang) == 1 ? 1 : 0;
             g_cfg.showTray    = GetCheck(hTray);
@@ -873,15 +864,6 @@ static LRESULT CALLBACK SetWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         while (d >= WHEEL_DELTA)  { SendMessageW(h, WM_VSCROLL, SB_LINEDOWN, 0); d -= WHEEL_DELTA; }
         while (d <= -WHEEL_DELTA) { SendMessageW(h, WM_VSCROLL, SB_LINEUP, 0);   d += WHEEL_DELTA; }
         return 0;
-    }
-    case WM_HSCROLL: {
-        // the opacity trackbar reports through WM_HSCROLL; keep its % label live
-        if ((HWND)l == hOpacity) {
-            int v = (int)SendMessageW(hOpacity, TBM_GETPOS, 0, 0);
-            wchar_t b[32]; swprintf(b, 32, L"%d%%", v);
-            SetWindowTextW(hOpacityLbl, b);
-        }
-        break;
     }
     case WM_CLOSE:
         ShowWindow(h, SW_HIDE);
@@ -1002,14 +984,11 @@ static void BuildSettingsUI() {
     // ---------- 外观 ----------
     section(T(S_SEC_LOOK), y); y += 24;
     lbl(T(S_OPACITY), C1, y, L1 - C1 - 4);
-    hOpacity = Mk(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS, L1, y, W1, 24, IDC_OPACITY);
-    SendMessageW(hOpacity, TBM_SETRANGE, TRUE, MAKELONG(30, 100));
-    SendMessageW(hOpacity, TBM_SETPOS, TRUE, g_cfg.opacity);
-    hOpacityLbl = Mk(L"STATIC", L"", SS_LEFT, L1 + W1 + 6, y + 5, 44, 18, IDC_OPACITYLBL);
-    {
-        wchar_t b[32]; swprintf(b, 32, L"%d%%", g_cfg.opacity);
-        SetWindowTextW(hOpacityLbl, b);
-    }
+    // typed like the other numeric fields: 30..100, no trackbar
+    hOpacity = Mk(L"EDIT", L"", ES_NUMBER | WS_BORDER | WS_TABSTOP, L1, y, 56, 22, IDC_OPACITY);
+    SetWindowTextW(hOpacity, std::to_wstring(g_cfg.opacity).c_str());
+    SendMessageW(hOpacity, EM_SETLIMITTEXT, 3, 0);
+    Mk(L"STATIC", L"%", SS_LEFT, L1 + 62, y + 4, 16, 18, 0);
     hDebugBg = chk(T(S_DEBUGBG), C2, y, IDC_DEBUGBG);
     SetCheck(hDebugBg, g_cfg.debugBg);
     y += 28;
@@ -1060,6 +1039,9 @@ static void BuildSettingsUI() {
     SetWindowTextW(hFleeSpd, std::to_wstring(g_cfg.fleeSpeed).c_str());
     SendMessageW(hFleeSpd, EM_SETLIMITTEXT, 3, 0);
     hint(T(S_FLEESPD_TIP), C2, y + 3, 626 - C2);
+    y += 28;
+    hStarve = chk(T(S_STARVE), C1, y, IDC_STARVE);
+    SetCheck(hStarve, g_cfg.starveWhenNoFood);
     y += 44;
 
     // ---------- 显示 ----------

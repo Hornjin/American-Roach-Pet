@@ -97,6 +97,7 @@ static const LStr kStr[] = {
 /*S_HK_QUIT*/        { L"退出程序", L"Quit" },
 /*S_FPS_SYNC*/       { L"跟随显示器", L"Monitor" },
 /*S_HK_PRESS*/       { L"请按下新的组合键…", L"Press a new key combination..." },
+/*S_STARVE*/         { L"桌面无食物时虫群逐渐消亡", L"Colony starves when no food is left" },
 };
 
 const wchar_t* T(int id) {
@@ -176,6 +177,7 @@ void ConfigLoad() {
     g_cfg.eatEnabled     = IniGetInt(L"behave", L"eat_files", 1) != 0;
     g_cfg.poopEnabled    = IniGetInt(L"behave", L"poop", 1) != 0;
     g_cfg.hideOnApp      = IniGetInt(L"behave", L"hide_on_app", 1) != 0;
+    g_cfg.starveWhenNoFood = IniGetInt(L"behave", L"starve", 0) != 0;
     g_cfg.fleeSpeed      = IniGetInt(L"behave", L"flee_speed", 100);
     if (g_cfg.fleeSpeed < 50)  g_cfg.fleeSpeed = 50;
     if (g_cfg.fleeSpeed > 300) g_cfg.fleeSpeed = 300;
@@ -225,6 +227,7 @@ void ConfigSave() {
     IniSetInt(L"behave", L"eat_files", g_cfg.eatEnabled ? 1 : 0);
     IniSetInt(L"behave", L"poop", g_cfg.poopEnabled ? 1 : 0);
     IniSetInt(L"behave", L"hide_on_app", g_cfg.hideOnApp ? 1 : 0);
+    IniSetInt(L"behave", L"starve", g_cfg.starveWhenNoFood ? 1 : 0);
     IniSetInt(L"behave", L"flee_speed", g_cfg.fleeSpeed);
     IniSetInt(L"behave", L"eat_interval", g_cfg.eatIntervalSec);
     IniSetInt(L"behave", L"max_hidden", g_cfg.maxHiddenFiles);
